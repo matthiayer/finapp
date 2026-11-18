@@ -13,7 +13,7 @@ the phases and the check to complete before moving to the next one:
 2. Agree on the first useful version and functional acceptance criteria in the
    [functional design](product/functional-design.md).
 3. Sketch the key screens and journeys, including import, empty, and error
-   states.
+   states in the [experience design](product/experience-design.md).
 4. Choose the architecture, stack, and sensitive-data controls in the
    [technical design](technical/technical-design.md).
 5. Build in small increments, starting with the app foundation, then data
@@ -37,7 +37,6 @@ its entry conditions are met.
 
 ## Current project context
 
-The initial project description is a locally hosted app that imports bank
-account data and makes it easy to create dashboards. The meaning of “locally
-hosted,” intended users, import methods, and all technical choices still need
-to be clarified.
+The project is a single-user, private-home-network app for importing bank
+account data, categorizing transactions, and reviewing finances. Technical
+hosting boundaries and bank-specific import formats remain to be defined.

@@ -1,7 +1,7 @@
 # Functional design
 
-**Status:** Draft — Phase 1 captured; Phase 2 behavior being defined
-**Last updated:** 2026-11-16
+**Status:** Phase 2 requirements and Phase 3 experience design agreed
+**Last updated:** 2026-11-18
 
 Describe what the app should help people do. Keep this document focused on
 user needs and observable behavior; put technology choices in the
@@ -12,12 +12,22 @@ user needs and observable behavior; put technology choices in the
 - **Problem to solve:** The user has accounts at multiple banks but lacks one
   place to understand balances, spending, and overall financial activity. They
   are concerned that unnoticed spending could make it difficult to save.
+- **Current workflow:** The user maintains one Excel file containing a large
+  list of bank history. They manually remove duplicates related to movements
+  between accounts, add a category to each transaction, then build graphs and
+  overviews using pivot tables.
+- **Desired improvement:** Make that workflow easier, reduce repetitive manual
+  work, and turn it into a sustainable web application.
+- **Highest-priority pain point:** Manually assigning a category to every
+  transaction. The first version should make categorization especially quick
+  and easy to review.
 - **Initial intended user:** The user themselves.
 - **Possible future users:** Their household; multi-user behavior is not yet in
   the first-version scope.
 - **Where and how users expect to use the app:** Hosted on a private home
   network and accessed from devices on that network. The exact access and
-  security behavior still needs technical definition.
+  network boundary still needs technical definition. The first version should
+  not require a sign-in.
 
 ## Goals and non-goals
 
@@ -25,9 +35,14 @@ user needs and observable behavior; put technology choices in the
 
 - Bring information from multiple bank accounts into one app. Manual import is
   acceptable for the first version if needed.
+- The first version covers current/checking accounts only.
 - Provide three distinct areas: importing information, viewing dashboards, and
   categorizing transactions. Categorization is a separate module within the
   app.
+- Prioritize reducing the time and effort needed to categorize transactions.
+- Categorization is meaningfully easier when active rules handle repeated
+  transactions automatically and the remaining new or unmatched transactions
+  are quick to review and categorize.
 - Show an overview of finances, including balances and history, and make
   multi-year financial trends easier to understand.
 - Help the user understand spending and income so activity that may affect
@@ -38,6 +53,13 @@ user needs and observable behavior; put technology choices in the
 - Automatic outlier detection or alerts are not part of the first version.
 - Recurring-payment or transaction-pattern analysis is not part of the first
   version; the focus is on financial trends over time.
+- Category-specific trend views are not part of the first version; category
+  breakdowns remain available in the overview.
+- Importing the user's existing Excel workbook is not in the first-version
+  scope; initial transaction history will come from bank-export files.
+- Savings and credit-card accounts are not in the first-version scope.
+- Direct bank connections and household/multiple-user access are not in the
+  first-version scope.
 
 ## User journeys
 
@@ -46,22 +68,64 @@ and important error or recovery paths.
 
 ### First use and setup
 
-- Initial user: the account owner. Setup details are to define.
+- Initial user: the account owner.
+- During first-run configuration, offer starter categories and starter rules as
+  optional imports that the user can choose independently. Enable imported
+  starter rules immediately. Provide built-in starter sets and allow importing
+  starter sets from files.
 
 ### Importing or updating account data
 
 - The first version should import files exported from banks.
+- Use posted/settled transactions for financial history; ignore pending
+  transactions if they are present in an export.
+- Determine whether a transaction is incoming or outgoing from bank data when
+  clear; ask the user to resolve ambiguous direction. Direction is separate
+  from category.
+- Let the user resolve an ambiguous transaction direction in the import
+  preview before confirming the job.
+- Use the booking date as the primary date for transaction lists and trends.
+  Retain the value date separately when it is present in the bank export.
+- The user expects bank-export files to contain no reversal transactions; a
+  reversal-handling workflow is not part of the first-version scope.
+- Let the user select multiple bank-export files from different accounts in
+  one import job.
 - The target is to import up to five years of transaction history where the
   banks make it available.
+- Detect the bank and account from an import file when possible; ask the user
+  to confirm or select an account if the match is uncertain.
+- If an import belongs to an account not yet in the app, let the user create
+  that account during the import flow.
 - Before saving, the app should show a preview of the selected file and let the
   user confirm the import.
+- Summarize the categories assigned by active rules in the import preview;
+  transaction-level categorization review happens in the categorization module.
+- Include the source bank/account, transaction date range, total row count with
+  valid and invalid counts, possible duplicate count, and total incoming and
+  outgoing amounts in the preview.
+- For a multi-file job, show one combined summary rather than a separate
+  aggregate summary per file/account; identify the included files/accounts and
+  keep validation errors tied to the relevant file and row.
 - If an import may contain transactions already imported, the app should show
   the possible duplicates and ask the user how to handle them rather than
   silently adding or discarding them.
-- If a file contains both valid and invalid rows, the app should report the
-  invalid rows and let the user import valid rows only.
+- For a possible duplicate, offer to keep the existing transaction and skip
+  the imported row, import it anyway and keep both, or replace/update the
+  existing transaction with the imported data. Let the user decide per match
+  or apply a choice to a group of similar matches.
+- If an imported transaction matches one the user has manually edited, show
+  the differing values and ask whether to keep the edits or use the imported
+  values.
+- If any file in a multi-file job contains invalid rows, report the invalid
+  rows and reject the entire job without importing any of its files. The user
+  can correct the source file and retry the job.
+- After an import, let the user undo the entire import batch or review that
+  batch and remove selected transactions.
+- Keep each imported transaction linked to its import job so the user can
+  filter transactions by the job that imported them.
+- When a job completes, show a result summary of imported and skipped
+  transactions and any errors, with actions to view or undo the job.
 - To decide: which banks and file formats should be supported?
-- To decide: how should users review, correct, or undo an import?
 
 #### Public bank-export research
 
@@ -69,11 +133,16 @@ Research checked on 2026-11-16. These public help pages do not confirm what is
 available for the user's specific accounts; verify export options in the bank's
 own service before finalizing format support.
 
-The user can provide export files later to help verify real-world file
-structure. Before sharing, use a small redacted or synthetic sample; do not
-share account identifiers, names, balances, or real transaction details. Any
-sample used for implementation or tests must be sanitized and kept out of
-version control.
+Bank-specific parser behavior must be validated against synthetic bank-shaped
+fixtures and, when needed to confirm a real export layout, a sanitized sample.
+Do not upload or commit an unmodified bank export. Plan an offline
+anonymization tool or script before using real exports as shared test samples;
+it must replace sensitive account/counterparty identifiers and personal
+descriptions while preserving the structural details needed to test parsing.
+The tool must write a separate output without changing the original, run
+without sending data over the network, and flag fields it cannot safely
+anonymize. Review the output for remaining sensitive values before sharing.
+Keep both original exports and sanitized samples out of version control.
 
 | Bank | Publicly documented information | Five-year availability |
 | --- | --- | --- |
@@ -83,6 +152,29 @@ version control.
 
 ### Creating and viewing dashboards
 
+#### Dashboard graph proposal (accepted as the first-version starting set)
+
+The user has said the dashboard is not the priority yet, but accepted this
+graph set as the first-version starting point. The detailed visual treatment
+can be iterated later.
+
+1. **Monthly cash flow:** grouped columns for incoming money and spending, with
+   a line for saving (income minus spending). Exclude confirmed internal
+   transfers from these totals. Default to the rolling 12 months; allow the
+   agreed time-range presets and custom dates.
+2. **Account balance history:** a line per current account, with an optional
+   combined balance. Show the effective date for latest balances and disclose
+   when a combined total combines balances from different dates.
+3. **Spending by category:** horizontal bars for the selected period, including
+   Uncategorized, so the largest spending groups are easy to identify.
+4. **Income by category:** a category breakdown for the selected period, so
+   groups such as Salary can be understood without requiring automatic salary
+   detection.
+
+Selecting a category filters every dashboard chart. Category-specific monthly
+trend charts are not included. Keep the dashboard predefined; this proposal
+does not add custom widgets, saved views, or report export.
+
 - The first version should show combined balances across accounts, income and
   spending over time, transaction history, and spending by group.
 - Show each account's latest known balance with its date. The combined balance
@@ -91,6 +183,8 @@ version control.
 - If an import does not provide an account balance, ask the user to enter the
   current balance and record when it applies. Use that balance and the imported
   transactions to calculate historical balances for the covered period.
+- Let the user update an account's known balance and effective date later;
+  recalculate historical balances from available transactions.
 - If transaction history has a gap, continue with a best-effort calculation
   using the available transactions and do not block the rest of the app. Show a
   non-blocking error for the user to fix, and clearly mark affected historical
@@ -106,16 +200,31 @@ version control.
 - The user defines saving as income minus spending.
 - Exclude confirmed internal transfers from the income and spending totals used
   to calculate saving.
+- Account balances supported in the first version must already be in EUR.
+- Convert non-EUR transaction amounts to EUR for combined totals and trends.
+- For non-EUR transactions, use the bank-provided EUR equivalent when
+  available; otherwise use a historical exchange rate for the transaction
+  date. The exchange-rate source remains a technical-design decision.
 - Show multi-year trends in spending, saving, earning, and account balances as
   monthly totals.
+- If history only covers part of a month, show the total for the available
+  transactions without a special partial-month marker.
+- Let the user choose a common preset range or a custom start and end date.
+- Offer these preset ranges: 3 months, 6 months, 12 months, year to date,
+  previous calendar year, 3 years, 5 years, and all available history. The
+  default remains the rolling last 12 months.
+- Use a predefined dashboard layout in the first version. Let the user filter
+  by time range and category, but do not support adding or rearranging widgets
+  or saving filter combinations. Dashboard charts and summaries are viewed in
+  the app, not exported as reports.
 - Internal transfers should be shown separately from income and spending.
 - The app should suggest likely pairs of outgoing and incoming transactions
   as transfers when they are in opposite directions, have the same amount, are
-  within three days of each other, and belong to accounts marked as the user's
-  own. Ask the user to confirm each suggested match.
-- To decide: should users select one category or compare multiple categories in
-  trend views?
-- To decide: what should users be able to customize, save, and share?
+  within three days of each other, and belong to accounts the user imported.
+  All accounts imported in the first version belong to the user. Ask the user
+  to confirm each suggested match.
+- To decide: which exchange-rate source and date should be used to convert
+  non-EUR amounts?
 
 ### Categorizing transactions
 
@@ -130,16 +239,27 @@ version control.
   amounts), source, recipient/payee, or text in the description. For example,
   the user can create a Salary category and a rule matching positive amounts
   from a particular sender.
+- For a rule with multiple conditions, let the user choose whether all
+  conditions must match (AND) or any condition may match (OR).
 - Transactions that no rule can categorize should be available in an
-  Uncategorized review list.
+  Uncategorized review list. Uncategorized is a category of its own, so these
+  transactions remain included in the applicable income or spending totals and
+  appear separately in category breakdowns.
 - Make it easy to filter uncategorized transactions and save a useful filter as
   a reusable categorization rule. Prioritize a clear, efficient review
-  experience so repeated or straightforward cases are easy to process.
+  experience so repeated or straightforward cases are easy to process; this is
+  the highest-priority pain point in the current workflow.
 - Make repeated payees or senders and frequently occurring transactions easy
   to spot, and allow sorting by transaction amount.
+- Sort the Uncategorized review list by most frequent/repeated payees first by
+  default; let the user change filters and sorting.
 - Let the user select and categorize multiple matching transactions together.
-- When saving a filter as a rule, ask whether to apply it to existing matching
-  transactions as well as future imports.
+- During rule creation, preview the existing transactions that match the rule.
+  Saving the rule applies it to the previewed existing transactions and
+  automatically categorizes future matching transactions.
+- If an existing match has a category the user assigned manually, show it in
+  the preview and ask whether to replace that category before applying the rule
+  to that transaction.
 - Provide a place to review and manage existing rules, not only create rules
   from transaction filters. The user should be able to view and search rules,
   edit them, enable or disable them, and delete them. When disabling or
@@ -150,20 +270,23 @@ version control.
 - Provide category management so the user can view, create, edit, and delete
   categories. If a category being deleted is assigned to transactions, ask
   whether to move those transactions to Uncategorized or another category.
-- When multiple rules conflict, or a rule change would replace a manual
-  transaction override, the app should ask the user what to do rather than
-  silently choosing. Possible actions include prioritizing rules, keeping a
-  manual override, or updating the rules.
-- When editing a rule, ask whether it should also update categories on existing
-  transactions.
+- When deleting a category assigned by rules, disable the affected rules before
+  deleting the category.
+- When multiple rules conflict, the app should not silently choose a winner.
+  Ask the user to resolve the conflict, including by editing the rules or
+  choosing a category for the affected transaction. Do not add a separate
+  persistent rule-priority system in the first version.
+- A rule should not silently replace a manual transaction override.
+- Editing a rule affects future matches only; transactions already categorized
+  retain their current categories.
 - The categorization module should be designed to allow future extensions;
   specific future features are not in the first-version scope yet.
 
 ## Interaction principles
 
 - Prefer asking the user to make a decision over taking an unconfigured
-  automated action. User-created and enabled rules are explicit permission to
-  automate matching categorizations.
+  automated action. Saving a rule after previewing its matching transactions
+  is the user's explicit decision to apply it to those and future matches.
 - Where appropriate, repeated decision prompts may offer a "Don't ask me
   again" option.
 
@@ -172,53 +295,91 @@ version control.
 Write requirements so they can be verified. Use identifiers such as `FR-01`
 when a requirement is agreed.
 
+The criteria below are agreed as the first-version behavior baseline. They
+define observable behavior, not implementation details. Criteria depending
+on bank export samples or technical choices are explicitly deferred.
+
 | ID | Requirement | Priority | Acceptance criteria | Status |
 | --- | --- | --- | --- | --- |
-| FR-01 | Import transaction data exported from ING Belgium, Triodos Belgium, and vdk bank accounts, covering up to five years where available. | First version | Supported file formats, fields, and actual history availability to verify | Draft |
-| FR-02 | Preview an import and require user confirmation before saving. | First version | Preview content and confirmation behavior to define | Draft |
-| FR-03 | Identify possible duplicates and ask the user how to handle them. | First version | Duplicate matching and available choices to define | Draft |
-| FR-04 | Report invalid rows and allow valid rows from the same file to be imported. | First version | Required fields, row-level feedback, and partial-import behavior to define | Draft |
-| FR-05 | Show each account's latest known balance and date, plus a combined balance based on those latest known balances. | First version | Show dates clearly; combined balance may combine different dates | Draft |
-| FR-06 | Show monthly spending by group, total incoming money, and saving (income minus spending), excluding confirmed internal transfers; allow income such as salary to be viewed by category. | First version | Exact calculations and acceptance criteria to define | Draft |
-| FR-07 | Default the dashboard to the rolling last 12 months and allow the user to select other ranges, including multi-year monthly trends where history is available. | First version | Available ranges and acceptance criteria to define | Draft |
-| FR-08 | Assign income and spending transactions to categories using rules based on transaction details, while allowing per-transaction overrides and user-created categories and rules. | First version | Rule behavior and acceptance criteria to define | Draft |
-| FR-09 | Ask the user to resolve conflicts between matching rules or between a rule change and a manual override; offer prioritizing rules, keeping a manual override, or updating rules. | First version | Conflict flow and effects of each choice to define | Draft |
-| FR-10 | When a rule is edited, ask whether it should also update categories on existing transactions. | First version | Confirmation scope and preview behavior to define | Draft |
-| FR-11 | Suggest transfers between accounts marked as the user's own when transactions have equal amounts in opposite directions within three days; require user confirmation and show confirmed transfers separately from income and spending. | First version | Account ownership setup and transfer suggestion behavior to define | Draft |
-| FR-12 | Show changes in account balances over time. | First version | Trend calculation and presentation to define | Draft |
-| FR-13 | Make the app accessible from devices on the user's private home network. | First version | To define in technical design | Draft |
-| FR-14 | If an import has no account balance, let the user enter the current balance and its date, then calculate historical balances from that point using imported transactions. | First version | Use available history; mark balances affected by unresolved gaps as incomplete per FR-15 | Draft |
-| FR-15 | If transaction history has a gap, continue with a best-effort calculation and show a non-blocking issue. Let the user remind later, upload files to close the gap, or explicitly ignore it; ignoring closes the issue and removes the incomplete marker from affected balances. | First version | Gap detection, action state, file reconciliation, and marker behavior to define | Draft |
-| FR-16 | Provide a separate categorization module with an Uncategorized review list; surface repeated payees/senders and frequent transactions, allow filtering, amount sorting, and bulk categorization, and let the user save a filter as a rule. | First version | Review workflow, filter behavior, and rule creation criteria to define | Draft |
-| FR-17 | When saving a filter as a rule, ask whether to apply it to existing matching transactions. | First version | Confirmation and application behavior to define | Draft |
-| FR-18 | Provide a place in the categorization module to view/search, edit, enable/disable, and delete categorization rules. | First version | Rule list behavior and confirmation flow for existing categorizations to define | Draft |
-| FR-19 | Let the user view, create, edit, and delete categories; when deleting a category in use, ask whether to move its transactions to Uncategorized or another category. | First version | Category management and reassignment flow to define | Draft |
-| FR-20 | Allow categories to be used flexibly for income or spending transactions. | First version | Category behavior in dashboard calculations to define | Draft |
-| FR-21 | Let the user import a starter set of categories. | First version | Starter set contents and import behavior to define | Draft |
-| FR-22 | Prefer asking for user decisions over unconfigured automation and, where appropriate, offer a "Don't ask me again" option. | First version | Prompts and persistent preference scope to define | Draft |
-
+| FR-01 | Import transaction data exported from ING Belgium, Triodos Belgium, and vdk bank accounts, covering up to five years where available. | First version | For each supported bank format, a synthetic fixture verifies parsing behavior; a sanitized sample verifies the real layout before that format is considered confirmed. Import all history present in the file, up to five years where available. Exact formats/history remain deferred until sanitized samples are available. | Agreed |
+| FR-32 | Let the user include multiple bank-export files from different accounts in one import job. | First version | User can select at least two files for one job; preview and confirmation apply to the job as a whole; each transaction remains associated with the right account and job. | Agreed |
+| FR-30 | Detect the bank/account for an import when possible; ask the user to confirm or select an account when uncertain, and allow creating a new account during import. | First version | Recognized account details are shown for confirmation; unrecognized/ambiguous account mapping requires the user to select or create an account before confirming import; no file is silently assigned to an uncertain account. | Agreed |
+| FR-33 | Let the user choose whether multiple conditions in a categorization rule combine with AND or OR. | First version | A rule with multiple conditions can be saved with either logic; test transactions matching all, only one, or no conditions receive the result implied by the selected logic. | Agreed |
+| FR-35 | Use posted/settled transactions for financial history and ignore pending transactions in imports. | First version | Given an export containing a row explicitly marked pending and a posted row, only the posted row appears in imported financial history. | Agreed |
+| FR-41 | Use the booking date for transaction lists and trends; retain the value date separately when provided. | First version | When an input row has both dates, lists and monthly totals use the booking date and the value date remains available as a separate detail. | Agreed |
+| FR-42 | Determine transaction direction from bank data when clear; let the user resolve ambiguous direction in the import preview; keep direction separate from category. | First version | Clear bank direction is mapped to incoming/outgoing; ambiguous direction requires a user choice in preview; the chosen direction affects totals independently of category. | Agreed |
+| FR-38 | Keep imported financial data until the user explicitly deletes it. | First version | Imported data remains available after navigation and restart; no time-based retention removes it; an individual deletion occurs only after the user initiates and confirms it. Whole-app deletion remains out of scope. | Agreed |
+| FR-39 | Support current/checking accounts only in the first version. | First version | Current/checking accounts can be created and imported; unsupported account types are not silently treated as checking accounts and are identified to the user. | Agreed |
+| FR-37 | After an import job completes, show imported/skipped counts and errors, with actions to view or undo the job. | First version | A completed job summary reports the job's imported/skipped rows and errors and provides working view and undo actions; a rejected job reports that zero rows were imported. | Agreed |
+| FR-02 | Preview an import and require user confirmation before saving; show included files/accounts and combined job-level date range, row/valid/invalid counts, possible duplicate count, incoming/outgoing totals, and category totals. Keep validation errors tied to the relevant file and row. | First version | Before confirmation, preview shows all selected files/accounts and the specified combined totals; category totals summarize active-rule assignments. Row-level validation errors identify file and row. Cancelling or closing before confirmation saves nothing. | Agreed |
+| FR-03 | Identify possible duplicates and ask the user whether to skip the imported row, keep both, or update the existing transaction; allow a choice per match or for a group of similar matches. | First version | For each duplicate candidate presented, all three choices are available; a per-match choice affects that candidate only, while a group choice affects only the selected similar candidates. Duplicate-detection matching criteria remain to be defined during technical/format design. | Agreed |
+| FR-31 | When an import matches a manually edited transaction, show differing values and ask whether to keep the edits or use the imported values. | First version | For a matched manually edited transaction with differing fields, the preview identifies the differences and requires a keep-edits or use-imported choice before changing those fields. | Agreed |
+| FR-04 | If any file in a multi-file import job has an invalid row, report the errors and reject the entire job without importing any files. | First version | If any row in any selected file is invalid, the job imports zero rows, identifies each invalid file/row and reason, and permits retry after the source file is corrected. | Agreed |
+| FR-24 | Let the user undo an entire import batch or remove selected transactions from that batch. | First version | Undoing a job removes only transactions attributed to that job; removing selected rows leaves other rows in that job and rows from other jobs unchanged. Require confirmation before removal. Effects on separately edited or linked records need UX review. | Agreed |
+| FR-25 | Let the user edit transaction date, amount, description/payee, account, income/spending direction, and transfer status; delete selected transactions with confirmation; and manually back up and restore parsed financial data and categorization setup, without original uploaded files. Category assignment is separate. | First version | Each listed field can be changed and its saved value appears in the transaction; category changes remain in categorization. Manual backup includes parsed transactions, accounts, balances, import-job history, categories, rules, and settings, omits uploaded source files, and warns about sensitive contents. Restore replaces current data only after confirmation; no password protection or Excel export is required. | Agreed |
+| FR-29 | Keep imported transactions linked to their import job and allow filtering transactions by import job. | First version | Selecting an import job filter shows only transactions attributed to that job; clearing the filter restores the unfiltered list. | Agreed |
+| FR-05 | Show each account's latest known balance and date, plus a combined balance based on those latest known balances. | First version | For each account, display its latest known balance and effective date; the combined figure equals the sum of those latest balances and indicates when component dates differ. | Agreed |
+| FR-06 | Show monthly spending by group, total incoming money, and saving (income minus spending), excluding confirmed internal transfers; allow income such as salary to be viewed by category. | First version | For a selected month, spending equals outgoing posted transactions and income equals incoming posted transactions, excluding confirmed internal transfers. Saving equals income minus spending. Amounts by category reconcile to their respective totals, including Uncategorized. | Agreed |
+| FR-28 | Treat Uncategorized as a category; include its transactions in income/spending totals according to direction and show Uncategorized separately in category breakdowns. | First version | An uncategorized incoming/outgoing transaction contributes to the corresponding total and appears under Uncategorized in the category breakdown; assigning a category moves it out of that breakdown without changing direction or amount. | Agreed |
+| FR-07 | Default the dashboard to the rolling last 12 months; offer 3 months, 6 months, 12 months, year to date, previous calendar year, 3 years, 5 years, all available history, and a custom date range. | First version | Initial dashboard range is the rolling 12 months. Each listed preset and a valid custom date range updates the displayed period; data outside available history is not fabricated. | Agreed |
+| FR-34 | Provide a predefined dashboard with time-range and category filters; do not allow adding/rearranging widgets, saving filter combinations, or exporting dashboard reports in the first version. | First version | Dashboard uses a fixed layout; time-range selection updates displayed data and category selection filters every dashboard chart; no widget add/reorder, saved filter combination, or dashboard report export is offered. | Agreed |
+| FR-23 | Support EUR account balances only. Convert non-EUR transaction amounts to EUR for combined totals and trends, using a bank-provided EUR equivalent when available and otherwise a historical rate for the transaction date. | First version | EUR amounts are unchanged; a bank-provided EUR equivalent is used when present; otherwise the selected historical rate for the transaction date is applied. Account balances in non-EUR are not accepted. Rate provider and unavailable-rate behavior are deferred to technical design. | Agreed |
+| FR-08 | Assign income and spending transactions to categories using rules based on transaction details, while allowing per-transaction overrides and user-created categories and rules. | First version | A saved rule can match transaction direction/amount, source, payee, or description and assign its category to matching income or spending transactions. A user can assign a category manually to one transaction. | Agreed |
+| FR-09 | Do not silently resolve conflicting matching rules or replace a manual transaction override; ask the user to choose a category or edit the rules. | First version | When multiple rules match with different categories, the app does not apply an arbitrary winner; it asks the user to choose a category or edit rules. A manual category is not silently replaced. | Agreed |
+| FR-10 | Editing a rule affects future matches only; existing transactions retain their current categories. | First version | After editing/saving a rule, previously categorized transactions keep their categories; transactions matched after the edit use the updated rule. | Agreed |
+| FR-11 | Suggest transfers between accounts imported by the user when transactions have equal amounts in opposite directions within three days; require user confirmation and show confirmed transfers separately from income and spending. | First version | Transactions from imported accounts with equal absolute amounts, opposite directions, and dates no more than three days apart are offered as a candidate; no candidate is treated as a transfer until confirmed. Confirmed pairs display separately and are excluded from income/spending and saving totals. | Agreed |
+| FR-12 | Show changes in account balances over time. | First version | For a selected period, monthly balance values are shown from available balance and transaction history; changing the period updates the values without inventing unavailable history. | Agreed |
+| FR-40 | For a month with only partially available transaction history, show totals for the available transactions without a special partial-month marker. | First version | When imported history begins or ends mid-month, that month's charts show totals from available transactions and add no partial-month marker. Internal gaps continue to use the separate FR-15 issue behavior. | Agreed |
+| FR-13 | Make the app accessible from devices on the user's private home network without requiring a sign-in. | First version | A user on the configured private home network can open the app without a sign-in; access from outside that network is not exposed. Exact network boundary and verification are deferred to technical design. | Agreed |
+| FR-14 | Let the user enter or update an account balance and its effective date; calculate historical balances from that point using available imported transactions. | First version | Saving a known balance with an effective date recalculates the account's history using available transactions; changing the anchor balance/date updates the derived balances. | Agreed |
+| FR-15 | If transaction history has a gap, continue with a best-effort calculation and show a non-blocking issue. Let the user remind later, upload files to close the gap, or explicitly ignore it; ignoring closes the issue and removes the incomplete marker from affected balances. | First version | A detected gap does not block other app use and marks affected history incomplete. Remind-later leaves the issue open; a successful import that fills the gap resolves it; ignore closes it and removes the marker. Best-effort values remain available. Gap-detection rules are to be defined from bank data. | Agreed |
+| FR-16 | Provide a separate categorization module with an Uncategorized review list sorted by most frequent/repeated payees by default; surface repeated payees/senders, allow filtering, amount sorting, bulk categorization, and saving a filter as a rule. | First version | Categorization is reachable as a separate module. Uncategorized entries default to most frequent/repeated payees; user can filter/sort by amount, select multiple entries, assign a category in one action, and save a filter as a rule. | Agreed |
+| FR-17 | Preview existing transactions matching a new rule; when saved, apply it to those and future matches, but ask individually before replacing a manually assigned category. | First version | Rule creation shows existing matches before save. Saving applies the rule to reviewed matches and future matches; each manually categorized match requires an explicit replace/keep decision. | Agreed |
+| FR-18 | Provide a place in the categorization module to view/search, edit, enable/disable, and delete categorization rules. | First version | User can view/search rules and edit, enable, disable, or delete one. Disabling/deleting asks whether to keep existing categorizations or return affected transactions to Uncategorized. | Agreed |
+| FR-19 | Let the user view, create, edit, and delete categories; when deleting a category in use, ask whether to move its transactions to Uncategorized or another category. | First version | User can view/create/edit/delete categories. Deleting an assigned category requires choosing Uncategorized or another category for affected transactions; no transaction is left referencing a deleted category. | Agreed |
+| FR-43 | When deleting a category used by rules, disable the affected rules before deleting the category. | First version | Before deletion completes, every rule assigning the category is disabled; the user is told which rules were affected. Existing transaction handling follows FR-19 and FR-18. | Agreed |
+| FR-20 | Allow categories to be used flexibly for income or spending transactions. | First version | The same user-created category can be assigned to an incoming or outgoing transaction; direction and category remain independently stored/displayed. | Agreed |
+| FR-21 | During first-run configuration, offer built-in starter categories and rules and allow importing starter sets from files; let the user select categories and rules independently and enable selected starter rules immediately. | First version | First-run setup offers built-in sets and file import; user can select categories and rules independently; selected rules are enabled after setup and unselected sets are not imported. Exact starter-set contents/file format are deferred to experience/technical design. | Agreed |
+| FR-22 | Prefer asking for user decisions over unconfigured automation and, where appropriate, offer a "Don't ask me again" option. | First version | The app does not silently take a decision that requires user input under the agreed flows. Where a repeated prompt offers "Don't ask me again," the choice is stored and suppresses that same prompt thereafter; exact prompts and scope are finalized in experience design. | Agreed |
+| FR-26 | Provide an English interface optimized for laptop browsers, with basic support for phone browsers. | First version | All first-version workflows are usable in an English laptop-browser layout; phone users can access the app and use the basic supported views without content being inaccessible. Exact browser/device matrix is deferred to experience design. | Agreed |
 ## Data and user controls
 
-- What account, transaction, and dashboard information should be stored?
-- How should duplicate, pending, reversed, or uncategorized transactions appear?
-- Can users edit, delete, export, or fully clear their data?
-- How should users know when an import or dashboard update has completed?
-- To decide
+- Let the user edit transaction details and delete selected transactions, with
+  a clear confirmation before deletion.
+- Editable transaction details include date, amount, description/payee,
+  account, income/spending direction, and transfer status. Category assignment
+  remains a separate categorization action.
+- Let the user back up all app data and restore from a backup. A separate
+  human-readable export for use in Excel is not required in the first version.
+- Data export/backup should include the underlying financial data and
+  categorization setup (including categories and rules); dashboards are
+  generated from that data and are not exported as reports.
+- Include parsed transactions, accounts, balances, import-job history,
+  categories, rules, and app settings in a backup, but omit the original
+  uploaded bank-export files.
+- Backups are initiated manually in the first version; scheduled automatic
+  backups are out of scope.
+- An ordinary backup file is acceptable; built-in password protection is not
+  required. Clearly warn that the file contains sensitive financial data.
+- Restoring a backup replaces the current app data only after the user confirms
+  the replacement.
+- Deleting all app data is not part of the first-version scope.
+- Keep imported financial data until the user explicitly deletes it.
 
 ## Quality expectations
 
 Define user-visible expectations for accessibility, usability, performance,
 reliability, and supported browsers/devices.
 
-- To decide
+- Interface language: English.
+- Optimize the first version for laptop browsers; provide basic phone-browser
+  support. Tablet support is not in the first-version scope.
 
 ## Open questions
 
-- Can each bank provide five years of transaction data in a format suitable for
-  import? ING's public export formats/history and vdk's structured export format
-  are unconfirmed.
-- Is importing files sufficient, or is a direct bank connection eventually
-  needed?
-- Should household members eventually have separate access, shared access, or
-  both?
-- What data retention, correction, export, and deletion controls are required?
+- Deferred until a sanitized sample is available: verify each bank's actual
+  export format and five-year history availability. Public documentation does
+  not confirm ING's export formats/history or vdk's structured export format.
+- Deferred: clarify what "remove duplicates related to movements between
+  accounts" means in the current spreadsheet workflow. This clarification is
+  not required for the first-version design.
