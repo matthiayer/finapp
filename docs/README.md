@@ -18,8 +18,9 @@ the phases and the check to complete before moving to the next one:
    [technical design](technical/technical-design.md).
 5. Build in small increments, starting with the app foundation, then data
    import and dashboards.
-6. Verify behavior and safety, then document and test local hosting in
-   [local development and hosting](operations/local-development.md).
+6. Verify behavior and safety, then document and test the build, installation,
+   activation, update, and recovery steps in the
+   [local development and hosting guide](operations/local-development.md).
 
 Keep the [decision log](decisions/decision-log.md) up to date throughout. Treat
 the roadmap as a proposed sequence: do not start an implementation phase until
@@ -38,5 +39,9 @@ its entry conditions are met.
 ## Current project context
 
 The project is a single-user, private-home-network app for importing bank
-account data, categorizing transactions, and reviewing finances. Technical
-hosting boundaries and bank-specific import formats remain to be defined.
+account data, categorizing transactions, and reviewing finances. Hosting
+constraints and the Triodos, ING, and VDK CSV schemas are documented; parser
+implementation and deployment details remain for the technical and
+implementation phases. Optional starter categories, conservative rules, and
+their JSON import format are defined in the
+[starter-set specification](product/starter-sets.md).

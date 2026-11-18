@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local CSV Sanitizer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font: 16px/1.5 system-ui, sans-serif;
+      color: #1b1b1f;
+      background: #f7f6fa;
+      --surface: #fff;
+      --primary: #6750a4;
+      --outline: #79767f;
+      --error: #b3261e;
+    }
+
+    body {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    h1, h2 { line-height: 1.2; }
+
+    .card {
+      margin: 16px 0;
+      padding: 20px;
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: 0 1px 3px #0002;
+    }
+
+    label { display: block; margin: 12px 0 4px; font-weight: 600; }
+    input, select, button { font: inherit; }
+    input[type="file"], select, input[type="number"] {
+      box-sizing: border-box;
+      max-width: 100%;
+      min-height: 44px;
+      padding: 8px;
+    }
+
+    button {
+      min-height: 44px;
+      margin: 12px 8px 0 0;
+      padding: 8px 16px;
+      border: 0;
+      border-radius: 22px;
+      color: white;
+      background: var(--primary);
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--primary);
+      background: #eee8f7;
+    }
+
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    .warning {
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: #f5efff;
+    }
+
+    .error { color: var(--error); }
+    .muted { color: #5f5d66; }
+    .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .keep-list { display: grid; gap: 8px; margin: 16px 0; }
+    .keep-option { display: flex; align-items: flex-start; gap: 10px; font-weight: 400; }
+    .keep-option input { margin-top: 5px; }
+    .keep-option code { overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Local CSV Sanitizer</h1>
+    <p>Prepare a separate, sanitized copy of a bank CSV on this device.</p>
+
+    <section class="card" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">Privacy first</h2>
+      <p class="warning">
+        This page has no network code and does not upload your file. Values are
+        redacted by default. Column names are kept; review the output before
+        sharing. Any column you choose to keep is copied unchanged and may
+        contain sensitive information.
+      </p>
+      <p class="muted">
+        Repeated values in a redacted column receive the same placeholder in
+        this copy. The placeholder mapping is not saved.
+      </p>
+    </section>
+
+    <section class="card" aria-labelledby="input-title">
+      <h2 id="input-title">1. Choose a CSV</h2>
+      <label for="file">Bank CSV file</label>
+      <input id="file" type="file" accept=".csv,text/csv">
+
+      <div class="settings">
+        <div>
+          <label for="delimiter">Delimiter</label>
+          <select id="delimiter">
+            <option value=";">Semicolon (;)</option>
+            <option value=",">Comma (,)</option>
+            <option value="&#9;">Tab</option>
+            <option value="|">Vertical bar (|)</option>
+          </select>
+        </div>
+        <div>
+          <label for="encoding">File encoding</label>
+          <select id="encoding">
+            <option value="utf-8">UTF-8</option>
+            <option value="windows-1252">Windows-1252</option>
+          </select>
+        </div>
+        <div>
+          <label for="has-header">Column-name header</label>
+          <select id="has-header">
+            <option value="no">No header (safer default)</option>
+            <option value="yes">File has a header row</option>
+          </select>
+        </div>
+        <div>
+          <label for="header-record">Header record</label>
+          <input id="header-record" type="number" min="1" value="1">
+        </div>
+      </div>
+      <p class="muted">
+        For safety, the default treats every record as data and uses generic
+        column names. If you select a header row, its names are preserved
+        unchanged; inspect them before sharing. Records before that header are
+        omitted. The output is UTF-8 CSV using the selected delimiter.
+      </p>
+      <button id="analyze" type="button" disabled>Analyze locally</button>
+      <p id="status" role="status" aria-live="polite"></p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="columns-card" class="card" aria-labelledby="columns-title" hidden>
+      <h2 id="columns-title">2. Review columns</h2>
+      <p id="summary"></p>
+      <p>
+        All values will be redacted unless you explicitly keep a column
+        unchanged. Dates and amounts can also be sensitive; keep them only if
+        you have reviewed that choice.
+      </p>
+      <div id="columns" class="keep-list"></div>
+      <button id="keep-none" class="secondary" type="button">Redact every column</button>
+      <button id="download" type="button">Create sanitized copy</button>
+    </section>
+
+    <section class="card">
+      <h2>For the CSV you described</h2>
+      <p>
+        Account numbers/names, counterparty account, transaction number, and
+        description/message fields should normally remain redacted. The page
+        redacts every column by default, including columns not recognized by
+        name.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    "use strict";
+    (() => {
+      function parseCsv(text, delimiter) {
+        if (typeof delimiter !== "string" || delimiter.length !== 1) {
+          throw new Error("Choose a one-character delimiter.");
+        }
+        text = text.replace(/^\uFEFF/, "");
+        const rows = [];
+        let row = [];
+        let field = "";
+        let quoted = false;
+        let atFieldStart = true;
+
+        for (let i = 0; i < text.length; i += 1) {
+          const char = text[i];
+          if (quoted) {
+            if (char === '"') {
+              if (text[i + 1] === '"') {
+                field += '"';
+                i += 1;
+              } else {
+                quoted = false;
+              }
+            } else {
+              field += char;
+            }
+            continue;
+          }
+          if (char === '"' && atFieldStart) {
+            quoted = true;
+            atFieldStart = false;
+          } else if (char === delimiter) {
+            row.push(field);
+            field = "";
+            atFieldStart = true;
+          } else if (char === "\n" || char === "\r") {
+            row.push(field);
+            rows.push(row);
+            row = [];
+            field = "";
+            atFieldStart = true;
+            if (char === "\r" && text[i + 1] === "\n") i += 1;
+          } else {
+            if (char === '"') throw new Error("Malformed quoted CSV field.");
+            field += char;
+            atFieldStart = false;
+          }
+        }
+        if (quoted) throw new Error("CSV contains an unclosed quoted field.");
+        if (field.length > 0 || row.length > 0 || atFieldStart === false) {
+          row.push(field);
+          rows.push(row);
+        }
+        return rows;
+      }
+
+      function prepareRows(rows, hasHeader, headerRecord) {
+        const nonEmpty = rows.filter((row) => !(row.length === 1 && row[0] === ""));
+        if (nonEmpty.length === 0) throw new Error("CSV contains no records.");
+        if (!hasHeader) {
+          const width = nonEmpty[0].length;
+          if (width === 0) throw new Error("CSV contains no fields.");
+          for (let i = 1; i < nonEmpty.length; i += 1) {
+            if (nonEmpty[i].length !== width) {
+              throw new Error(
+                `Record ${i + 1} has ${nonEmpty[i].length} fields; expected ${width}. No output was created.`
+              );
+            }
+          }
+          const generatedHeader = Array.from({ length: width }, (_, index) => `Column ${index + 1}`);
+          return [generatedHeader, ...nonEmpty];
+        }
+        if (!Number.isInteger(headerRecord) || headerRecord < 1) {
+          throw new Error("Header record must be 1 or greater.");
+        }
+        if (nonEmpty.length < headerRecord) {
+          throw new Error("Header record is beyond the end of the file.");
+        }
+        const prepared = nonEmpty.slice(headerRecord - 1);
+        const header = prepared[0];
+        if (header.length === 0 || header.every((cell) => cell.trim() === "")) {
+          throw new Error("The selected header record is empty.");
+        }
+        return prepared;
+      }
+
+      function sanitizeRows(rows, keepIndices) {
+        if (rows.length === 0) throw new Error("CSV contains no header record.");
+        const width = rows[0].length;
+        if (width === 0 || rows[0].every((cell) => cell.trim() === "")) {
+          throw new Error("The selected header record is empty.");
+        }
+        const mappings = Array.from({ length: width }, () => new Map());
+        const output = [rows[0]];
+        let dataRowCount = 0;
+        for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+          const row = rows[rowIndex];
+          if (row.length === 1 && row[0] === "") continue;
+          if (row.length !== width) {
+            throw new Error(
+              `Record ${rowIndex + 1} has ${row.length} fields; expected ${width}. No output was created.`
+            );
+          }
+          const sanitized = row.map((value, columnIndex) => {
+            if (keepIndices.has(columnIndex) || value === "") return value;
+            const mapping = mappings[columnIndex];
+            if (!mapping.has(value)) {
+              mapping.set(value, `REDACTED_${String(mapping.size + 1).padStart(4, "0")}`);
+            }
+            return mapping.get(value);
+          });
+          output.push(sanitized);
+          dataRowCount += 1;
+        }
+        return { rows: output, dataRowCount };
+      }
+
+      function serializeCsv(rows, delimiter) {
+        return rows.map((row) => row.map((value) => {
+          const text = String(value);
+          if (text.includes('"') || text.includes("\r") || text.includes("\n") || text.includes(delimiter)) {
+            return `"${text.replace(/"/g, '""')}"`;
+          }
+          return text;
+        }).join(delimiter)).join("\r\n") + "\r\n";
+      }
+
+      const api = { parseCsv, prepareRows, sanitizeRows, serializeCsv };
+      if (typeof window !== "undefined") window.CsvSanitizer = api;
+      if (typeof document === "undefined") return;
+
+      const fileInput = document.getElementById("file");
+      const delimiterInput = document.getElementById("delimiter");
+      const encodingInput = document.getElementById("encoding");
+      const hasHeaderInput = document.getElementById("has-header");
+      const headerInput = document.getElementById("header-record");
+      const analyzeButton = document.getElementById("analyze");
+      const downloadButton = document.getElementById("download");
+      const status = document.getElementById("status");
+      const error = document.getElementById("error");
+      const columnsCard = document.getElementById("columns-card");
+      const columnsElement = document.getElementById("columns");
+      const summary = document.getElementById("summary");
+      let selectedFile = null;
+      let parsedRows = null;
+      let delimiter = ";";
+
+      function clearAnalysis() {
+        parsedRows = null;
+        columnsCard.hidden = true;
+        columnsElement.replaceChildren();
+        downloadButton.disabled = true;
+      }
+
+      function showError(message) {
+        error.textContent = message;
+        error.hidden = false;
+        status.textContent = "";
+      }
+
+      function readText(file) {
+        return file.arrayBuffer().then((buffer) => {
+          try {
+            return new TextDecoder(encodingInput.value, { fatal: true }).decode(buffer);
+          } catch {
+            throw new Error(`The file is not valid ${encodingInput.value}. Try the other encoding.`);
+          }
+        });
+      }
+
+      fileInput.addEventListener("change", () => {
+        selectedFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+        analyzeButton.disabled = !selectedFile;
+        clearAnalysis();
+        error.hidden = true;
+        status.textContent = selectedFile ? "File selected. Values will not be shown." : "";
+      });
+
+      function updateHeaderRecordState() {
+        const usesHeader = hasHeaderInput.value === "yes";
+        headerInput.disabled = !usesHeader;
+      }
+      updateHeaderRecordState();
+
+      hasHeaderInput.addEventListener("change", () => {
+        updateHeaderRecordState();
+        clearAnalysis();
+      });
+
+      [delimiterInput, encodingInput, headerInput].forEach((input) => {
+        input.addEventListener("change", clearAnalysis);
+      });
+
+      analyzeButton.addEventListener("click", async () => {
+        clearAnalysis();
+        error.hidden = true;
+        if (!selectedFile) return;
+        try {
+          const headerRecord = Number.parseInt(headerInput.value, 10);
+          if (!Number.isInteger(headerRecord) || headerRecord < 1) {
+            throw new Error("Header record must be 1 or greater.");
+          }
+          delimiter = delimiterInput.value;
+          const text = await readText(selectedFile);
+          const allRows = parseCsv(text, delimiter);
+          parsedRows = prepareRows(
+            allRows,
+            hasHeaderInput.value === "yes",
+            headerRecord
+          );
+          const header = parsedRows[0];
+          const expectedWidth = header.length;
+          for (let i = 1; i < parsedRows.length; i += 1) {
+            if (parsedRows[i].length !== expectedWidth) {
+              throw new Error(
+                `Record ${headerRecord + i} has ${parsedRows[i].length} fields; expected ${expectedWidth}. Values are not shown.`
+              );
+            }
+          }
+
+          columnsElement.replaceChildren();
+          header.forEach((name, index) => {
+            const label = document.createElement("label");
+            label.className = "keep-option";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.dataset.columnIndex = String(index);
+            checkbox.addEventListener("change", () => {
+              downloadButton.disabled = false;
+            });
+            const description = document.createElement("span");
+            const code = document.createElement("code");
+            code.textContent = name || `(blank header, column ${index + 1})`;
+            const detail = document.createElement("span");
+            detail.textContent = " — keep values unchanged";
+            description.append(code, detail);
+            label.append(checkbox, description);
+            columnsElement.append(label);
+          });
+          summary.textContent =
+            `${parsedRows.length - 1} data records; ${header.length} columns. ` +
+            "Column names are shown, but transaction values are not.";
+          columnsCard.hidden = false;
+          downloadButton.disabled = false;
+          status.textContent = "Analysis complete. All values are currently set to be redacted.";
+        } catch (caught) {
+          clearAnalysis();
+          showError(caught instanceof Error ? caught.message : "Could not read the CSV.");
+        }
+      });
+
+      document.getElementById("keep-none").addEventListener("click", () => {
+        columnsElement.querySelectorAll('input[type="checkbox"]').forEach((box) => {
+          box.checked = false;
+        });
+        downloadButton.disabled = false;
+      });
+
+      downloadButton.addEventListener("click", () => {
+        error.hidden = true;
+        try {
+          if (!parsedRows || !selectedFile) throw new Error("Analyze a CSV first.");
+          const keepIndices = new Set(
+            Array.from(columnsElement.querySelectorAll('input[type="checkbox"]:checked'))
+              .map((box) => Number(box.dataset.columnIndex))
+          );
+          const result = sanitizeRows(parsedRows, keepIndices);
+          const csv = serializeCsv(result.rows, delimiter);
+          const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
+          link.href = url;
+          link.download = `${baseName}-sanitized.csv`;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          status.textContent =
+            `Created ${link.download} with ${result.dataRowCount} data records. ` +
+            "Review it locally before sharing.";
+        } catch (caught) {
+          showError(caught instanceof Error ? caught.message : "Could not create the sanitized copy.");
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

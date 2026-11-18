@@ -5,20 +5,23 @@
 
 This document turns the agreed first-version behavior in the
 [functional design](functional-design.md) into the agreed first screen and
-flow design. It is not a visual specification. Technical choices and
-implementation details remain deferred to later phases.
+flow design. Use Material Design 3 (Material You) guidelines for visual
+components, typography, spacing, and responsive behavior.
 
 ## Experience principles
 
-- Optimize the main workflows for a laptop browser; keep essential actions
-  usable on a phone browser.
+- Optimize the main workflows for current Chrome on a laptop. Other browsers
+  and phone use are nice to have.
+- Serve the app from Proxmox as a pure web application. Any PC or device on the
+  private home network with a supported browser can use it; client devices
+  require no app installation.
 - Keep importing, categorizing, and reviewing financial summaries as distinct
   destinations.
 - Make the current import job and account context visible wherever relevant.
 - Show a preview before an irreversible or bulk action; clearly state its
   scope and provide a confirmation step.
-- Surface incomplete, ambiguous, or conflicting data and let the user decide
-  rather than silently guessing.
+- Surface ambiguous or conflicting data and let the user decide rather than
+  silently guessing.
 - Never ask the user to upload an unmodified bank export for design or testing.
 
 ## Navigation
@@ -30,7 +33,7 @@ Use the following six primary navigation destinations:
    landing screen; import history is not a separate destination.
 3. **Categorize** — review Uncategorized transactions and manage rules.
 4. **Transactions** — search, filter, edit, and remove transactions.
-5. **Accounts** — balances, balance corrections, and history-gap issues.
+5. **Accounts** — balances and balance corrections.
 6. **Settings** — categories, starter sets, backup, and restore.
 
 On narrow screens, collapse the navigation into a menu while keeping the
@@ -55,7 +58,6 @@ current destination and primary action visible.
 - **Empty state:** Explain that the dashboard fills after importing
   transactions; provide a clear **Import data** action.
 - **Partial data:** Show available totals without a partial-month marker.
-  Surface internal history gaps separately as an account issue.
 
 ### Import files
 
@@ -84,19 +86,22 @@ current destination and primary action visible.
   choice per match or for a selected group of similar matches.
 - For a manually edited match, show changed fields and require a keep-edits or
   use-imported choice.
+- If an imported transaction lacks a bank-provided EUR equivalent, request one
+  exchange rate per source currency and transaction date. Apply it only to
+  matching transactions in this import preview.
 - Require the user to confirm the whole job before saving. Leaving or
   cancelling before confirmation saves nothing.
-- **Open:** The matching rules for duplicate detection and the consequences of
-  undoing/removing separately edited or linked records need technical and
-  interaction design.
+- Duplicate candidates require an exact match on the account or accounts
+  involved, amount, description, and transaction timestamp.
 
 ### Import result and job history
 
 - Show imported and skipped counts and any errors.
-- Provide **View transactions** and **Undo import** actions scoped to that job.
+- Provide a **View transactions** action scoped to that job. Do not provide an
+  undo-import action.
 - In the import history list, show a recognizable job summary and allow the
-  user to open its transactions or undo it.
-- Require confirmation before undoing a job or removing selected transactions.
+  user to open its transactions.
+- Require confirmation before removing selected transactions.
 
 ### Categorization inbox
 
@@ -143,25 +148,29 @@ current destination and primary action visible.
   account, direction, and transfer status. Keep category assignment in the
   categorization workflow.
 - Allow selected transactions to be deleted with a clear count and
-  confirmation.
+  confirmation. A selected transaction linked to a confirmed transfer cannot
+  be removed until the transfer link is resolved. For a manually edited,
+  unlinked transaction, disclose that its edits will be deleted and require
+  confirmation before removal.
 - Show confirmed transfers distinctly from income and spending.
+- Keep both transactions in their account histories and account balances, but
+  exclude confirmed transfer pairs from income/spending, saving, and category
+  totals. Do not require categorization for confirmed transfers.
 
-### Accounts and balance issues
+### Accounts and balances
 
 - List current/checking accounts with their latest known balance and effective
   date; show the combined balance and disclose different component dates.
 - Provide an account detail view with balance history and a form to enter a
   known balance and effective date.
-- Show history gaps as non-blocking issues, with **Remind me later**,
-  **Upload files**, and **Ignore** actions.
-- Clearly mark affected derived history as incomplete until the issue is
-  resolved or ignored.
 
 ### Categories, setup, and data management
 
 - During first use, offer built-in starter categories and rules and an option
-  to import starter sets from files. Let the user select categories and rules
-  independently.
+  to import UTF-8 JSON starter-set files. Let the user select categories and
+  rules independently, preview categories to add or reuse and each selected
+  rule's existing transaction matches, and confirm before importing or
+  enabling rules.
 - Provide category list/create/edit/delete actions. Before deleting a category
   in use, require a destination for its transactions and disable affected
   rules, identifying those rules to the user.
@@ -176,8 +185,8 @@ current destination and primary action visible.
 ### Import
 
 `Select files → detect/confirm or create accounts → validate files → review
-combined preview and duplicate choices → confirm job → show result → view or
-undo job`
+combined preview and duplicate choices → confirm job → show result → view job
+transactions`
 
 If any file has invalid rows, show the row errors and stop before import; the
 user corrects the source file and retries the job.
@@ -191,8 +200,7 @@ matches → resolve manual-category prompts → save`
 ### Review finances and correct a balance
 
 `Open Overview → choose time range → inspect totals/charts → open account
-detail → enter known balance and effective date → review recalculated history
-and any gap issue`
+detail → enter known balance and effective date → review recalculated history`
 
 ## States to cover in detailed screen design
 
@@ -201,10 +209,12 @@ and any gap issue`
 - Unsupported file, unreadable file, invalid rows, and whole-job rejection.
 - Account detection uncertain or account not yet created.
 - Duplicate candidates and manually edited conflicts.
-- Import success, partial skip counts, and undo confirmation.
+- Import success, partial skip counts, and selected-transaction removal
+  confirmation.
+- Deletion blocked for a confirmed transfer-linked transaction, and impact
+  confirmation for a manually edited transaction.
 - Multiple conflicting rules and manual-category replacement.
 - Empty dashboard range and history with differing balance dates.
-- Open, reminded, resolved, and ignored history-gap issues.
 - Backup creation, sensitive-data warning, invalid backup, and restore
   confirmation.
 
@@ -221,7 +231,8 @@ and any gap issue`
 
 ## Deferred beyond Phase 3
 
-- Exact visual styling, spacing, responsive breakpoints, and browser matrix.
-- Bank-specific layouts, parser behavior, and sanitized sample tooling.
-- Duplicate-matching algorithm and exchange-rate source/failure behavior.
-- Technical decisions for hosting, storage, backup format, and network access.
+- Detailed component-level styling and responsive implementation should
+  follow Material Design 3; current Chrome on laptop is the required target.
+  Other browsers and phone layouts are nice to have.
+- Remaining implementation details such as exact data/config paths and backup
+  file format.

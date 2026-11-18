@@ -24,10 +24,11 @@ user needs and observable behavior; put technology choices in the
 - **Initial intended user:** The user themselves.
 - **Possible future users:** Their household; multi-user behavior is not yet in
   the first-version scope.
-- **Where and how users expect to use the app:** Hosted on a private home
-  network and accessed from devices on that network. The exact access and
-  network boundary still needs technical definition. The first version should
-  not require a sign-in.
+- **Where and how users expect to use the app:** A pure web application hosted
+  on Proxmox and accessed through a supported browser from any PC or device on
+  the private home network, with the network boundary defined in the
+  [technical design](../technical/technical-design.md). Client devices should
+  not need an installed app or sign-in.
 
 ## Goals and non-goals
 
@@ -71,12 +72,50 @@ and important error or recovery paths.
 - Initial user: the account owner.
 - During first-run configuration, offer starter categories and starter rules as
   optional imports that the user can choose independently. Enable imported
-  starter rules immediately. Provide built-in starter sets and allow importing
-  starter sets from files.
+  starter rules immediately after preview and confirmation. Provide built-in
+  starter sets and allow importing UTF-8 JSON starter-set files. The contents
+  and format are defined in the [starter-set specification](starter-sets.md).
 
 ### Importing or updating account data
 
-- The first version should import files exported from banks.
+- Support bank-export CSV files from Triodos Belgium, ING Belgium, and VDK
+  Belgium. Each bank defines its own CSV layout; confirm the field mapping
+  from bank documentation or user-provided field descriptions, then verify the
+  parser with synthetic fixtures and sanitized samples when needed.
+- For Triodos CSVs, account for comma or semicolon delimiters and the
+  possibility that older exports have no column-header row. Map transaction
+  and value dates, own and counterparty account details, amount and direction,
+  transaction type/description, and post-transaction balance where present.
+  Amount direction may be encoded by a signed amount or separate debit and
+  credit columns; confirm the actual variant from sanitized samples.
+- A user-described Triodos variant has quoted fields in this order: booking
+  date (`dd-mm-yyyy`), own account number, signed amount with comma decimal
+  separator, counterparty account number, counterparty BIC/SWIFT, counterparty
+  name, counterparty address, transaction code (for example `SCT` or `IN`),
+  description, and resulting account balance. The described variant has one
+  date field and a signed amount; do not assume a separate value date or
+  debit/credit columns in this variant. The user's Triodos file uses a comma
+  delimiter.
+- The user-described ING CSV has a semicolon delimiter and a header row with
+  these fields in order: `Rekeningnummer`, `Naam van de rekening`, `Rekening
+  tegenpartij`, `Omzetnummer`, `Boekingsdatum`, `Valutadatum`, `Bedrag`,
+  `Munteenheid`, `Omschrijving`, `Detail van de omzet`, and `Bericht`. Booking
+  and value dates use `dd/mm/yyyy`; amounts use a comma decimal separator and
+  may have a leading minus sign.
+- The user-described VDK CSV is semicolon-delimited with quoted fields. It
+  starts with six key/value summary records for account number, account name,
+  account type, balance, balance timestamp, and whether a filter is active;
+  after a blank line comes the transaction header. Its fields, in order, are
+  execution date, value date, statement year, statement number, VDK reference,
+  transaction type, counterparty account, counterparty BIC/SWIFT, counterparty
+  name, address, postal code, city, country, message, amount, balance after
+  movement, exchange rate, and fees. The account summary may provide the
+  account balance and its effective timestamp; the described balance uses a
+  comma decimal separator and its timestamp format is `dd/mm/yyyy hh:mm:ss`.
+  Transaction dates use `dd/mm/yyyy`; amounts may have a leading minus sign
+  and use a comma decimal separator. The example has the active-filter
+  indicator set to `Neen`; the application ignores this indicator and imports
+  the transactions present in the selected file without special handling.
 - Use posted/settled transactions for financial history; ignore pending
   transactions if they are present in an export.
 - Determine whether a transaction is incoming or outgoing from bank data when
@@ -90,8 +129,11 @@ and important error or recovery paths.
   reversal-handling workflow is not part of the first-version scope.
 - Let the user select multiple bank-export files from different accounts in
   one import job.
-- The target is to import up to five years of transaction history where the
-  banks make it available.
+- Limit each uploaded file to 1 MB (1,000,000 bytes). The limit applies per
+  file, so a multi-file job may exceed 1 MB in total when each file is within
+  the limit.
+- Let the user choose how much history to import by selecting the bank-export
+  file or files. The application does not impose a history-range limit.
 - Detect the bank and account from an import file when possible; ask the user
   to confirm or select an account if the match is uncertain.
 - If an import belongs to an account not yet in the app, let the user create
@@ -109,6 +151,9 @@ and important error or recovery paths.
 - If an import may contain transactions already imported, the app should show
   the possible duplicates and ask the user how to handle them rather than
   silently adding or discarding them.
+- Treat an imported transaction as a possible duplicate only when the account
+  or accounts involved, amount, description, and transaction timestamp all
+  match an existing transaction.
 - For a possible duplicate, offer to keep the existing transaction and skip
   the imported row, import it anyway and keep both, or replace/update the
   existing transaction with the imported data. Let the user decide per match
@@ -119,13 +164,14 @@ and important error or recovery paths.
 - If any file in a multi-file job contains invalid rows, report the invalid
   rows and reject the entire job without importing any of its files. The user
   can correct the source file and retry the job.
-- After an import, let the user undo the entire import batch or review that
-  batch and remove selected transactions.
+- After an import, let the user review the batch and remove selected
+  transactions. Do not provide an action to undo an entire import batch.
 - Keep each imported transaction linked to its import job so the user can
   filter transactions by the job that imported them.
 - When a job completes, show a result summary of imported and skipped
-  transactions and any errors, with actions to view or undo the job.
-- To decide: which banks and file formats should be supported?
+  transactions and any errors, with an action to view the job's transactions.
+- Deferred until sanitized samples are available: verify the bank-specific CSV
+  layouts and actual history availability.
 
 #### Public bank-export research
 
@@ -135,20 +181,17 @@ own service before finalizing format support.
 
 Bank-specific parser behavior must be validated against synthetic bank-shaped
 fixtures and, when needed to confirm a real export layout, a sanitized sample.
-Do not upload or commit an unmodified bank export. Plan an offline
-anonymization tool or script before using real exports as shared test samples;
-it must replace sensitive account/counterparty identifiers and personal
-descriptions while preserving the structural details needed to test parsing.
-The tool must write a separate output without changing the original, run
-without sending data over the network, and flag fields it cannot safely
-anonymize. Review the output for remaining sensitive values before sharing.
-Keep both original exports and sanitized samples out of version control.
+Do not upload or commit an unmodified bank export. The browser-only
+[CSV sanitizer](../../tools/sanitize-csv.html) can create a separate copy on
+the user's Chromebook without network access. It redacts every data value by
+default; review column names and any values explicitly kept unchanged before
+sharing. Keep original exports and sanitized samples out of version control.
 
-| Bank | Publicly documented information | Five-year availability |
+| Bank | Publicly documented information | Publicly documented history/export details |
 | --- | --- | --- |
-| ING Belgium | No public information found confirming transaction-export formats or history limits. | Unknown |
-| Triodos Belgium | [Internet Banking export FAQ](https://www.triodos.be/nl/meest-gestelde-vragen/kan-ik-gegevens-vanuit-internet-banking-naar-mijn-boekhoudpakket-exporteren?id=31b679c364da) lists Excel, CSV, and CODA for exporting account data to accounting software. A [separate FAQ](https://www.triodos.be/nl/meest-gestelde-vragen/hoe-kan-ik-mijn-rekeninguittreksels-raadplegen?id=e6f9b40c28bd) documents PDF statements. | Not stated publicly |
-| vdk bank | The [account movements FAQ](https://www.vdk.be/nl/veelgestelde-vragen/ik-wil-een-overzicht-van-de-bewegingen-op-mijn-rekeningen-waar-vind-ik-dat) says processed movements can be viewed up to ten years back. The public pages found do not confirm a structured transaction-export format. A separate [statement FAQ](https://www.vdk.be/nl/veelgestelde-vragen/hoelang-blijven-mijn-elektronische-rekeninguittreksels-beschikbaar) says electronic statements remain in history for two years. | Five years of movements can be viewed, but five years of downloadable transaction data is not confirmed |
+| ING Belgium | Public format details were not confirmed. The user described a CSV with a semicolon delimiter and header row: `Rekeningnummer`, `Naam van de rekening`, `Rekening tegenpartij`, `Omzetnummer`, `Boekingsdatum`, `Valutadatum`, `Bedrag`, `Munteenheid`, `Omschrijving`, `Detail van de omzet`, and `Bericht`. Dates use `dd/mm/yyyy`; amounts use a comma decimal separator and may have a leading minus sign. | Not a product requirement |
+| Triodos Belgium | [Internet Banking export FAQ](https://www.triodos.be/nl/meest-gestelde-vragen/kan-ik-gegevens-vanuit-internet-banking-naar-mijn-boekhoudpakket-exporteren?id=31b679c364da) lists Excel, CSV, and CODA for exporting account data to accounting software. A [separate FAQ](https://www.triodos.be/nl/meest-gestelde-vragen/hoe-kan-ik-mijn-rekeninguittreksels-raadplegen?id=e6f9b40c28bd) documents PDF statements. User-provided format details: CSVs may use comma or semicolon delimiters; older exports may omit column headers. The user's file uses a comma delimiter. The user described a quoted, ten-field variant with booking date (`dd-mm-yyyy`), own account number, signed amount with comma decimal separator, counterparty account number, counterparty BIC/SWIFT, counterparty name, counterparty address, transaction code, description, and resulting balance. This variant has one date field and no separate debit/credit columns. No real transaction values are needed to define this mapping. | Not stated publicly |
+| VDK Belgium | The [account movements FAQ](https://www.vdk.be/nl/veelgestelde-vragen/ik-wil-een-overzicht-van-de-bewegingen-op-mijn-rekeningen-waar-vind-ik-dat) says processed movements can be viewed up to ten years back. The public pages found do not confirm a structured transaction-export format. A separate [statement FAQ](https://www.vdk.be/nl/veelgestelde-vragen/hoelang-blijven-mijn-elektronische-rekeninguittreksels-beschikbaar) says electronic statements remain in history for two years. The user described a semicolon-delimited quoted CSV with a six-record account summary, a blank line, and an 18-field transaction header. The summary includes account identity/type, balance and timestamp, and an active-filter indicator, which the app ignores; it imports the transactions present in the selected file without special handling based on that indicator. Transaction dates use `dd/mm/yyyy`; amounts may have a leading minus sign and use a comma decimal separator. The described account-balance timestamp uses `dd/mm/yyyy hh:mm:ss`, and balance uses a comma decimal separator. The example has the filter indicator set to `Neen`. | Exportable history range not confirmed |
 
 ### Creating and viewing dashboards
 
@@ -185,14 +228,6 @@ does not add custom widgets, saved views, or report export.
   transactions to calculate historical balances for the covered period.
 - Let the user update an account's known balance and effective date later;
   recalculate historical balances from available transactions.
-- If transaction history has a gap, continue with a best-effort calculation
-  using the available transactions and do not block the rest of the app. Show a
-  non-blocking error for the user to fix, and clearly mark affected historical
-  balances as incomplete until the gap is resolved or explicitly ignored.
-- For each gap issue, let the user choose to be reminded later (leaving it open
-  as an action), upload additional files to close the gap, or explicitly ignore
-  the gap. Ignoring it closes the action and removes the incomplete marker from
-  affected balances.
 - The default dashboard time window should be the rolling last 12 months, with
   the ability to change the selected time window.
 - Show total incoming money and spending by group. Income may have groups such
@@ -203,8 +238,11 @@ does not add custom widgets, saved views, or report export.
 - Account balances supported in the first version must already be in EUR.
 - Convert non-EUR transaction amounts to EUR for combined totals and trends.
 - For non-EUR transactions, use the bank-provided EUR equivalent when
-  available; otherwise use a historical exchange rate for the transaction
-  date. The exchange-rate source remains a technical-design decision.
+  available; otherwise ask the user to specify the exchange rate for the
+  transaction date. During import, ask once per source currency and transaction
+  date and apply that rate to matching transactions in the current import
+  preview. The user is the source of the rate; no external historical rate
+  provider is planned.
 - Show multi-year trends in spending, saving, earning, and account balances as
   monthly totals.
 - If history only covers part of a month, show the total for the available
@@ -223,8 +261,10 @@ does not add custom widgets, saved views, or report export.
   within three days of each other, and belong to accounts the user imported.
   All accounts imported in the first version belong to the user. Ask the user
   to confirm each suggested match.
-- To decide: which exchange-rate source and date should be used to convert
-  non-EUR amounts?
+- Keep both sides of a confirmed transfer in their account histories and use
+  them when calculating the respective account balances. Do not treat either
+  side as income or spending, include them in saving or category totals, or
+  require them to be categorized.
 
 ### Categorizing transactions
 
@@ -245,6 +285,8 @@ does not add custom widgets, saved views, or report export.
   Uncategorized review list. Uncategorized is a category of its own, so these
   transactions remain included in the applicable income or spending totals and
   appear separately in category breakdowns.
+- Confirmed internal transfers do not require a category and should not appear
+  in the Uncategorized review list.
 - Make it easy to filter uncategorized transactions and save a useful filter as
   a reusable categorization rule. Prioritize a clear, efficient review
   experience so repeated or straightforward cases are easy to process; this is
@@ -301,8 +343,9 @@ on bank export samples or technical choices are explicitly deferred.
 
 | ID | Requirement | Priority | Acceptance criteria | Status |
 | --- | --- | --- | --- | --- |
-| FR-01 | Import transaction data exported from ING Belgium, Triodos Belgium, and vdk bank accounts, covering up to five years where available. | First version | For each supported bank format, a synthetic fixture verifies parsing behavior; a sanitized sample verifies the real layout before that format is considered confirmed. Import all history present in the file, up to five years where available. Exact formats/history remain deferred until sanitized samples are available. | Agreed |
+| FR-01 | Import bank-export CSV transaction data from Triodos Belgium, ING Belgium, and VDK Belgium. Let the user choose the amount of history by selecting the files to import; impose no application history-range limit. | First version | For each bank, synthetic fixtures verify the documented or user-described layouts. Use sanitized samples when needed to confirm actual file variants. Import all eligible transactions in the selected file or files. The user controls the imported history range by selecting files; the application imposes no time-range limit. | Agreed |
 | FR-32 | Let the user include multiple bank-export files from different accounts in one import job. | First version | User can select at least two files for one job; preview and confirmation apply to the job as a whole; each transaction remains associated with the right account and job. | Agreed |
+| FR-44 | Limit each uploaded bank CSV file to 1 MB (1,000,000 bytes). | First version | Files up to and including 1,000,000 bytes can be selected for analysis; a larger file is rejected before parsing with a clear file-specific message. The limit applies per file, not to the combined job size. | Agreed |
 | FR-30 | Detect the bank/account for an import when possible; ask the user to confirm or select an account when uncertain, and allow creating a new account during import. | First version | Recognized account details are shown for confirmation; unrecognized/ambiguous account mapping requires the user to select or create an account before confirming import; no file is silently assigned to an uncertain account. | Agreed |
 | FR-33 | Let the user choose whether multiple conditions in a categorization rule combine with AND or OR. | First version | A rule with multiple conditions can be saved with either logic; test transactions matching all, only one, or no conditions receive the result implied by the selected logic. | Agreed |
 | FR-35 | Use posted/settled transactions for financial history and ignore pending transactions in imports. | First version | Given an export containing a row explicitly marked pending and a posted row, only the posted row appears in imported financial history. | Agreed |
@@ -310,12 +353,12 @@ on bank export samples or technical choices are explicitly deferred.
 | FR-42 | Determine transaction direction from bank data when clear; let the user resolve ambiguous direction in the import preview; keep direction separate from category. | First version | Clear bank direction is mapped to incoming/outgoing; ambiguous direction requires a user choice in preview; the chosen direction affects totals independently of category. | Agreed |
 | FR-38 | Keep imported financial data until the user explicitly deletes it. | First version | Imported data remains available after navigation and restart; no time-based retention removes it; an individual deletion occurs only after the user initiates and confirms it. Whole-app deletion remains out of scope. | Agreed |
 | FR-39 | Support current/checking accounts only in the first version. | First version | Current/checking accounts can be created and imported; unsupported account types are not silently treated as checking accounts and are identified to the user. | Agreed |
-| FR-37 | After an import job completes, show imported/skipped counts and errors, with actions to view or undo the job. | First version | A completed job summary reports the job's imported/skipped rows and errors and provides working view and undo actions; a rejected job reports that zero rows were imported. | Agreed |
+| FR-37 | After an import job completes, show imported/skipped counts and errors, with an action to view the job's transactions. | First version | A completed job summary reports the job's imported/skipped rows and errors and provides a working action to view its transactions; a rejected job reports that zero rows were imported. No whole-job undo action is provided. | Agreed |
 | FR-02 | Preview an import and require user confirmation before saving; show included files/accounts and combined job-level date range, row/valid/invalid counts, possible duplicate count, incoming/outgoing totals, and category totals. Keep validation errors tied to the relevant file and row. | First version | Before confirmation, preview shows all selected files/accounts and the specified combined totals; category totals summarize active-rule assignments. Row-level validation errors identify file and row. Cancelling or closing before confirmation saves nothing. | Agreed |
-| FR-03 | Identify possible duplicates and ask the user whether to skip the imported row, keep both, or update the existing transaction; allow a choice per match or for a group of similar matches. | First version | For each duplicate candidate presented, all three choices are available; a per-match choice affects that candidate only, while a group choice affects only the selected similar candidates. Duplicate-detection matching criteria remain to be defined during technical/format design. | Agreed |
+| FR-03 | Identify possible duplicates when the account or accounts involved, amount, description, and transaction timestamp all match; ask the user whether to skip the imported row, keep both, or update the existing transaction; allow a choice per match or for a group of similar matches. | First version | A row is presented as a possible duplicate only when all four matching fields are equal. For each candidate, skip, keep both, and update-existing choices are available; a per-match choice affects that candidate only, while a group choice affects only the selected similar candidates. | Agreed |
 | FR-31 | When an import matches a manually edited transaction, show differing values and ask whether to keep the edits or use the imported values. | First version | For a matched manually edited transaction with differing fields, the preview identifies the differences and requires a keep-edits or use-imported choice before changing those fields. | Agreed |
 | FR-04 | If any file in a multi-file import job has an invalid row, report the errors and reject the entire job without importing any files. | First version | If any row in any selected file is invalid, the job imports zero rows, identifies each invalid file/row and reason, and permits retry after the source file is corrected. | Agreed |
-| FR-24 | Let the user undo an entire import batch or remove selected transactions from that batch. | First version | Undoing a job removes only transactions attributed to that job; removing selected rows leaves other rows in that job and rows from other jobs unchanged. Require confirmation before removal. Effects on separately edited or linked records need UX review. | Agreed |
+| FR-24 | Let the user remove selected transactions from an import batch; do not provide functionality to undo an entire import batch. | First version | Removing selected transactions requires confirmation and leaves other transactions in that job and transactions from other jobs unchanged. A selected transaction linked to a confirmed transfer cannot be removed until the transfer link is resolved. A manually edited, unlinked transaction can be removed after clearly disclosing that its edits will be deleted and asking for confirmation. | Agreed |
 | FR-25 | Let the user edit transaction date, amount, description/payee, account, income/spending direction, and transfer status; delete selected transactions with confirmation; and manually back up and restore parsed financial data and categorization setup, without original uploaded files. Category assignment is separate. | First version | Each listed field can be changed and its saved value appears in the transaction; category changes remain in categorization. Manual backup includes parsed transactions, accounts, balances, import-job history, categories, rules, and settings, omits uploaded source files, and warns about sensitive contents. Restore replaces current data only after confirmation; no password protection or Excel export is required. | Agreed |
 | FR-29 | Keep imported transactions linked to their import job and allow filtering transactions by import job. | First version | Selecting an import job filter shows only transactions attributed to that job; clearing the filter restores the unfiltered list. | Agreed |
 | FR-05 | Show each account's latest known balance and date, plus a combined balance based on those latest known balances. | First version | For each account, display its latest known balance and effective date; the combined figure equals the sum of those latest balances and indicates when component dates differ. | Agreed |
@@ -323,25 +366,24 @@ on bank export samples or technical choices are explicitly deferred.
 | FR-28 | Treat Uncategorized as a category; include its transactions in income/spending totals according to direction and show Uncategorized separately in category breakdowns. | First version | An uncategorized incoming/outgoing transaction contributes to the corresponding total and appears under Uncategorized in the category breakdown; assigning a category moves it out of that breakdown without changing direction or amount. | Agreed |
 | FR-07 | Default the dashboard to the rolling last 12 months; offer 3 months, 6 months, 12 months, year to date, previous calendar year, 3 years, 5 years, all available history, and a custom date range. | First version | Initial dashboard range is the rolling 12 months. Each listed preset and a valid custom date range updates the displayed period; data outside available history is not fabricated. | Agreed |
 | FR-34 | Provide a predefined dashboard with time-range and category filters; do not allow adding/rearranging widgets, saving filter combinations, or exporting dashboard reports in the first version. | First version | Dashboard uses a fixed layout; time-range selection updates displayed data and category selection filters every dashboard chart; no widget add/reorder, saved filter combination, or dashboard report export is offered. | Agreed |
-| FR-23 | Support EUR account balances only. Convert non-EUR transaction amounts to EUR for combined totals and trends, using a bank-provided EUR equivalent when available and otherwise a historical rate for the transaction date. | First version | EUR amounts are unchanged; a bank-provided EUR equivalent is used when present; otherwise the selected historical rate for the transaction date is applied. Account balances in non-EUR are not accepted. Rate provider and unavailable-rate behavior are deferred to technical design. | Agreed |
+| FR-23 | Support EUR account balances only. Convert non-EUR transaction amounts to EUR for combined totals and trends, using a bank-provided EUR equivalent when available; otherwise ask the user to specify the exchange rate for the transaction date. | First version | EUR amounts are unchanged; use a bank-provided EUR equivalent when present; otherwise request one user-specified rate per source currency and transaction date and apply it to matching transactions in that import preview. Account balances in non-EUR are not accepted; no external historical rate provider is planned. | Agreed |
 | FR-08 | Assign income and spending transactions to categories using rules based on transaction details, while allowing per-transaction overrides and user-created categories and rules. | First version | A saved rule can match transaction direction/amount, source, payee, or description and assign its category to matching income or spending transactions. A user can assign a category manually to one transaction. | Agreed |
 | FR-09 | Do not silently resolve conflicting matching rules or replace a manual transaction override; ask the user to choose a category or edit the rules. | First version | When multiple rules match with different categories, the app does not apply an arbitrary winner; it asks the user to choose a category or edit rules. A manual category is not silently replaced. | Agreed |
 | FR-10 | Editing a rule affects future matches only; existing transactions retain their current categories. | First version | After editing/saving a rule, previously categorized transactions keep their categories; transactions matched after the edit use the updated rule. | Agreed |
-| FR-11 | Suggest transfers between accounts imported by the user when transactions have equal amounts in opposite directions within three days; require user confirmation and show confirmed transfers separately from income and spending. | First version | Transactions from imported accounts with equal absolute amounts, opposite directions, and dates no more than three days apart are offered as a candidate; no candidate is treated as a transfer until confirmed. Confirmed pairs display separately and are excluded from income/spending and saving totals. | Agreed |
+| FR-11 | Suggest transfers between accounts imported by the user when transactions have equal amounts in opposite directions within three days; require user confirmation and show confirmed transfers separately from income and spending. | First version | Transactions from imported accounts with equal absolute amounts, opposite directions, and dates no more than three days apart are offered as a candidate; no candidate is treated as a transfer until confirmed. Both transactions remain in their account histories and balance calculations. Confirmed pairs are excluded from income, spending, saving, and category totals and require no categorization. | Agreed |
 | FR-12 | Show changes in account balances over time. | First version | For a selected period, monthly balance values are shown from available balance and transaction history; changing the period updates the values without inventing unavailable history. | Agreed |
-| FR-40 | For a month with only partially available transaction history, show totals for the available transactions without a special partial-month marker. | First version | When imported history begins or ends mid-month, that month's charts show totals from available transactions and add no partial-month marker. Internal gaps continue to use the separate FR-15 issue behavior. | Agreed |
-| FR-13 | Make the app accessible from devices on the user's private home network without requiring a sign-in. | First version | A user on the configured private home network can open the app without a sign-in; access from outside that network is not exposed. Exact network boundary and verification are deferred to technical design. | Agreed |
+| FR-40 | For a month with only partially available transaction history, show totals for the available transactions without a special partial-month marker. | First version | When imported history begins or ends mid-month, that month's charts show totals from available transactions and add no partial-month marker. The app does not detect or manage transaction-history gaps. | Agreed |
+| FR-13 | Host the app on Proxmox as a browser-based web application, accessible from the user's private home network without client installation or sign-in. | First version | Current Chrome on a laptop can access the app from the private home network without installing client software or signing in; the app is served by the Proxmox host and is not exposed outside the agreed private network. Other browsers and phone layouts are nice to have. | Agreed |
 | FR-14 | Let the user enter or update an account balance and its effective date; calculate historical balances from that point using available imported transactions. | First version | Saving a known balance with an effective date recalculates the account's history using available transactions; changing the anchor balance/date updates the derived balances. | Agreed |
-| FR-15 | If transaction history has a gap, continue with a best-effort calculation and show a non-blocking issue. Let the user remind later, upload files to close the gap, or explicitly ignore it; ignoring closes the issue and removes the incomplete marker from affected balances. | First version | A detected gap does not block other app use and marks affected history incomplete. Remind-later leaves the issue open; a successful import that fills the gap resolves it; ignore closes it and removes the marker. Best-effort values remain available. Gap-detection rules are to be defined from bank data. | Agreed |
 | FR-16 | Provide a separate categorization module with an Uncategorized review list sorted by most frequent/repeated payees by default; surface repeated payees/senders, allow filtering, amount sorting, bulk categorization, and saving a filter as a rule. | First version | Categorization is reachable as a separate module. Uncategorized entries default to most frequent/repeated payees; user can filter/sort by amount, select multiple entries, assign a category in one action, and save a filter as a rule. | Agreed |
 | FR-17 | Preview existing transactions matching a new rule; when saved, apply it to those and future matches, but ask individually before replacing a manually assigned category. | First version | Rule creation shows existing matches before save. Saving applies the rule to reviewed matches and future matches; each manually categorized match requires an explicit replace/keep decision. | Agreed |
 | FR-18 | Provide a place in the categorization module to view/search, edit, enable/disable, and delete categorization rules. | First version | User can view/search rules and edit, enable, disable, or delete one. Disabling/deleting asks whether to keep existing categorizations or return affected transactions to Uncategorized. | Agreed |
 | FR-19 | Let the user view, create, edit, and delete categories; when deleting a category in use, ask whether to move its transactions to Uncategorized or another category. | First version | User can view/create/edit/delete categories. Deleting an assigned category requires choosing Uncategorized or another category for affected transactions; no transaction is left referencing a deleted category. | Agreed |
 | FR-43 | When deleting a category used by rules, disable the affected rules before deleting the category. | First version | Before deletion completes, every rule assigning the category is disabled; the user is told which rules were affected. Existing transaction handling follows FR-19 and FR-18. | Agreed |
 | FR-20 | Allow categories to be used flexibly for income or spending transactions. | First version | The same user-created category can be assigned to an incoming or outgoing transaction; direction and category remain independently stored/displayed. | Agreed |
-| FR-21 | During first-run configuration, offer built-in starter categories and rules and allow importing starter sets from files; let the user select categories and rules independently and enable selected starter rules immediately. | First version | First-run setup offers built-in sets and file import; user can select categories and rules independently; selected rules are enabled after setup and unselected sets are not imported. Exact starter-set contents/file format are deferred to experience/technical design. | Agreed |
+| FR-21 | During first-run configuration, offer built-in starter categories and rules and allow importing UTF-8 JSON starter-set files; let the user select categories and rules independently and enable selected starter rules after preview and confirmation. | First version | First-run setup offers the built-in sets and JSON file import; the user can select categories and rules independently and choose rules individually. Before confirmation, show categories to add/reuse and existing transactions matched by selected rules. Only confirmed items are imported; selected rules are enabled. See the [starter-set specification](starter-sets.md). | Agreed |
 | FR-22 | Prefer asking for user decisions over unconfigured automation and, where appropriate, offer a "Don't ask me again" option. | First version | The app does not silently take a decision that requires user input under the agreed flows. Where a repeated prompt offers "Don't ask me again," the choice is stored and suppresses that same prompt thereafter; exact prompts and scope are finalized in experience design. | Agreed |
-| FR-26 | Provide an English interface optimized for laptop browsers, with basic support for phone browsers. | First version | All first-version workflows are usable in an English laptop-browser layout; phone users can access the app and use the basic supported views without content being inaccessible. Exact browser/device matrix is deferred to experience design. | Agreed |
+| FR-26 | Provide an English interface optimized for Chrome on laptops. Support for other browsers and phone use is nice to have. | First version | All first-version workflows are usable in English in current Chrome on a laptop. Other browsers and phone layouts are not required for acceptance, but should work where practical. | Agreed |
 ## Data and user controls
 
 - Let the user edit transaction details and delete selected transactions, with
@@ -373,13 +415,7 @@ reliability, and supported browsers/devices.
 
 - Interface language: English.
 - Optimize the first version for laptop browsers; provide basic phone-browser
-  support. Tablet support is not in the first-version scope.
-
-## Open questions
-
-- Deferred until a sanitized sample is available: verify each bank's actual
-  export format and five-year history availability. Public documentation does
-  not confirm ING's export formats/history or vdk's structured export format.
-- Deferred: clarify what "remove duplicates related to movements between
-  accounts" means in the current spreadsheet workflow. This clarification is
-  not required for the first-version design.
+  support as a nice-to-have. Current Chrome on a laptop is the required target;
+  other browsers and tablet support are nice-to-have.
+- No fixed import or page-response speed target is required for the first
+  version; prioritize data correctness and predictable recovery.
