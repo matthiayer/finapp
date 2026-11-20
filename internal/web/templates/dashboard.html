@@ -1,0 +1,131 @@
+{{define "dashboard"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Overview · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a aria-current="page" href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a href="/imports">Import</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Your finances</p>
+    <h1>Overview</h1>
+    <form class="card filters" method="get" action="/">
+      <div>
+        <label for="range">Time range</label>
+        <select id="range" name="range">
+          <option value="3m" {{if eq .Range "3m"}}selected{{end}}>Last 3 months</option>
+          <option value="6m" {{if eq .Range "6m"}}selected{{end}}>Last 6 months</option>
+          <option value="12m" {{if eq .Range "12m"}}selected{{end}}>Last 12 months</option>
+          <option value="ytd" {{if eq .Range "ytd"}}selected{{end}}>Year to date</option>
+          <option value="previous-year" {{if eq .Range "previous-year"}}selected{{end}}>Previous calendar year</option>
+          <option value="3y" {{if eq .Range "3y"}}selected{{end}}>Last 3 years</option>
+          <option value="5y" {{if eq .Range "5y"}}selected{{end}}>Last 5 years</option>
+          <option value="all" {{if eq .Range "all"}}selected{{end}}>All history</option>
+          <option value="custom" {{if eq .Range "custom"}}selected{{end}}>Custom range</option>
+        </select>
+      </div>
+      <div id="custom-range-fields" {{if ne .Range "custom"}}hidden{{end}}>
+        <label for="start">Start date</label>
+        <input id="start" name="start" type="date" value="{{.View.Start}}" {{if eq .Range "custom"}}required{{end}}>
+        <label for="end">End date</label>
+        <input id="end" name="end" type="date" value="{{.View.End}}" {{if eq .Range "custom"}}required{{end}}>
+      </div>
+      <div>
+        <label for="category">Category</label>
+        <select id="category" name="category">
+          <option value="0">All categories</option>
+          {{range .View.Categories}}<option value="{{.ID}}" {{if eq $.View.SelectedCategoryID .ID}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </div>
+      <p class="muted filter-help">The category filter affects cash-flow charts; actual account-balance history remains unchanged.</p>
+      <button type="submit">Apply filters</button>
+    </form>
+
+    {{if .BalanceUpdated}}<div class="notice" role="status">Known account balance saved.</div>{{end}}
+    {{if not .HasTransactions}}
+      <section class="notice">
+        <strong>No transactions in this period.</strong>
+        <span>Import bank data to see income, spending, and category trends.</span>
+        <a href="/imports">Import data</a>
+      </section>
+    {{end}}
+
+    <section class="summary-grid dashboard-summary" aria-label="Financial summary">
+      <article class="card">
+        <span class="summary-label">Combined account balance</span>
+        {{if .HasKnownBalance}}<strong class="metric">€{{.View.CombinedBalance}}</strong>{{else}}<strong class="metric">Not available</strong>{{end}}
+        {{if .View.BalanceDatesDiffer}}<small>Balances use different effective dates.</small>{{end}}
+      </article>
+      <article class="card"><span class="summary-label">Income</span><strong class="metric">€{{.View.Summary.Income}}</strong></article>
+      <article class="card"><span class="summary-label">Spending</span><strong class="metric">€{{.View.Summary.Spending}}</strong></article>
+      <article class="card"><span class="summary-label">Saving</span><strong class="metric">€{{.View.Summary.Saving}}</strong></article>
+    </section>
+
+    <section class="card">
+      <h2>Accounts</h2>
+      {{if .View.Accounts}}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Account</th><th>Latest known balance</th><th>Effective date</th><th></th></tr></thead>
+            <tbody>{{range .View.Accounts}}
+              <tr>
+                <td>{{.Bank}}<small>{{if .Name}}{{.Name}}{{else}}{{.Number}}{{end}}</small></td>
+                <td>{{if .Known}}€{{.Balance}} {{.Currency}}{{else}}Not available{{end}}</td>
+                <td>{{if .Known}}{{.Date}}{{else}}—{{end}}</td>
+                <td>
+                  <details>
+                    <summary>{{if .Known}}Update balance{{else}}Set known balance{{end}}</summary>
+                    <form class="balance-form" method="post" action="/accounts/balance">
+                      <input type="hidden" name="account_id" value="{{.AccountID}}">
+                      <label for="balance-{{.AccountID}}">Balance (EUR)</label>
+                      <input id="balance-{{.AccountID}}" name="amount" type="number" step="0.01" value="{{if .Known}}{{.Balance}}{{end}}" required>
+                      <label for="balance-date-{{.AccountID}}">Effective date</label>
+                      <input id="balance-date-{{.AccountID}}" name="date" type="date" value="{{if .Date}}{{.Date}}{{else}}{{$.BalanceFormDate}}{{end}}" required>
+                      <button type="submit">Save balance</button>
+                    </form>
+                  </details>
+                </td>
+              </tr>
+            {{end}}</tbody>
+          </table>
+        </div>
+      {{else}}
+        <p class="muted">Accounts appear here after the first import.</p>
+      {{end}}
+    </section>
+
+    <section class="chart-grid">
+      <article class="card chart-card">
+        <h2>Monthly cash flow</h2>
+        {{if .HasTransactions}}<div class="chart-area"><canvas id="monthly-chart" aria-label="Monthly income, spending, and saving" role="img"></canvas></div>{{else}}<p class="muted">No monthly activity for this selection.</p>{{end}}
+      </article>
+      <article class="card chart-card">
+        <h2>Account balance history</h2>
+        {{if .HasBalance}}<div class="chart-area"><canvas id="balance-chart" aria-label="Observed account balance history" role="img"></canvas></div>{{else}}<p class="muted">No dated account balances are available for this period.</p>{{end}}
+      </article>
+      <article class="card chart-card">
+        <h2>Spending by category</h2>
+        {{if .View.SpendingByCategory}}<div class="chart-area"><canvas id="spending-chart" aria-label="Spending by category" role="img"></canvas></div>{{else}}<p class="muted">No spending in this selection.</p>{{end}}
+      </article>
+      <article class="card chart-card">
+        <h2>Income by category</h2>
+        {{if .View.IncomeByCategory}}<div class="chart-area"><canvas id="income-chart" aria-label="Income by category" role="img"></canvas></div>{{else}}<p class="muted">No income in this selection.</p>{{end}}
+      </article>
+    </section>
+    <script id="dashboard-data" type="application/json">{{.ChartData}}</script>
+    <script src="/static/vendor/chart.umd.min.js" defer></script>
+    <script src="/static/dashboard.js" defer></script>
+  </main>
+</body>
+</html>
+{{end}}

@@ -1,8 +1,7 @@
 # Technical design
 
-**Status:** Phase 4 complete — architecture, stack, and hosting decisions
-agreed; implementation details deferred
-**Last updated:** 2026-11-18
+**Status:** Phases 6 and 7 are complete; Phase 8 deployment verification remains
+**Last updated:** 2026-11-20
 
 This document defines how to implement the agreed [functional
 design](../product/functional-design.md) and [experience
@@ -150,13 +149,51 @@ LXC guest. No separate database or application container runtime is planned.
 | Language and framework | Go; one compiled web application | Accepted |
 | User interface | Embedded web assets with lightweight browser JavaScript | Accepted |
 | Dashboard charts | Chart.js, bundled with the embedded web assets; no CDN dependency | Accepted |
-| Database | SQLite in the guest's persistent data directory | Accepted |
+| Database | SQLite in the guest's persistent data directory, using the CGo-free `modernc.org/sqlite` driver | Accepted |
 | Database migrations | Goose with embedded SQL migration files | Accepted |
 | Build and package tooling | Go modules; GitHub Actions builds versioned Linux release artifacts | Accepted |
 | Test tooling | Go test for application and parser tests; Playwright using its Chrome channel for browser tests (Node.js is test-only) | Accepted |
 | Hosting | Dedicated Debian stable Proxmox LXC guest, separate from HAOS | Accepted |
 | Updates | GitHub Release package, pulled by the user when ready | Accepted |
-| Import formats | Add and test a parser adapter for each documented bank CSV layout | CSV agreed; schemas documented, parser implementation pending |
+| Import formats | Add and test a parser adapter for each documented bank CSV layout | Synthetic Triodos, ING, and VDK parser tests implemented |
+
+### Implemented runtime details
+
+- The Go module targets Go 1.27 and embeds templates, CSS, JavaScript, and the
+  Chart.js 4.5.0 UMD bundle. Chart.js is stored under
+  `internal/web/static/vendor/` with the Chart.js and `@kurkle/color` MIT
+  licenses; the browser makes no CDN request.
+- `modernc.org/sqlite` provides SQLite without CGo. Goose v3.30.1 applies the
+  embedded SQL migrations from `internal/storage/migrations/` at startup.
+- The database defaults to `data/finapp.db` locally and is configured for
+  `/var/lib/finapp/finapp.db` in the deployment environment. Newly created
+  parent directories use mode `0700`; the database file uses mode `0600`.
+- The implemented browser routes are `/` (dashboard), `/imports` (upload and
+  recent jobs), `/imports/preview`, `/imports/confirm`,
+  `/imports/result`, `/transactions`, `/accounts/balance`, `/static/…`, and
+  `/healthz`.
+- Upload bytes are capped at 1,000,001 bytes while reading each part so that
+  the service can report files exceeding the 1,000,000-byte limit. Original
+  CSV bytes are parsed in memory and are not written to disk or database.
+  Parsed preview rows are held in memory behind a random token for up to 20
+  minutes; successful confirmation writes transactions and import provenance
+  in one SQLite transaction.
+- Current migrations define settings, accounts, categories, categorization
+  rules, import jobs, transfer pairs, transactions, and transaction-import
+  provenance. Import previews load enabled direction/description rules,
+  assign unique matches, require explicit category choices for conflicting
+  matches, and persist the selected category with the transaction. Rows with
+  no matching rule use Uncategorized. Rule setup/selection and management UI
+  are not yet implemented.
+- The dashboard supports the agreed time presets and custom dates, category
+  filtering for transaction-based totals, four local Chart.js visualizations,
+  latest account balances, and manually entered balance anchors with effective
+  dates. Historical balance chart points are based on recorded transaction
+  balances and explicit account anchors; absent observations are not
+  interpolated.
+- `package.json` pins Chart.js as a private development dependency used only
+  to maintain the vendored browser bundle; Node.js is not needed to build or
+  run the Go application.
 
 ## Data and imports
 
@@ -174,21 +211,23 @@ Use normalized relational entities for:
 - **Transfer pair:** the two linked transactions and user confirmation state.
 - **Settings:** user-controlled app preferences required by the agreed scope.
 
-Exact fields and constraints will be finalized alongside the first parser and
-data model. Do not retain source file contents in transaction records.
+The initial schema is implemented in the embedded Goose migration files.
+Amounts are stored as decimal text rather than floating-point SQLite values.
+Do not retain source file contents in transaction records.
 
 ### Import processing
 
-1. Receive the selected files and write only to a restricted temporary
-   location if streaming parsing requires disk.
-2. Parse into a staging representation and validate every row.
+1. Receive the selected files and parse in memory; do not write source CSVs to
+   persistent or temporary files.
+2. Parse into an in-memory staging representation and validate every row.
 3. Show file- and row-specific errors. If any row is invalid, reject the whole
    job and persist none of its transactions.
 4. Present account mapping, duplicate candidates, manual-edit conflicts, and
    the combined preview for user decisions.
 5. On confirmation, apply the selected decisions in one database transaction
    and record the import-job association for every imported row.
-6. Remove staged file contents after completion, cancellation, or failure.
+6. Discard staged parsed rows after confirmation, preview expiry, or process
+   shutdown.
 
 Apply the agreed duplicate criteria to identify possible matches: the account
 or accounts involved, amount, description, and transaction timestamp must all
@@ -233,11 +272,16 @@ is held by the Proxmox guest rather than a separate client installation.
   Verify during deployment that the boundary remains in place and no external
   route exposes the service.
 - A private IP address alone is not an authentication mechanism.
-- Use framework-standard CSRF protection and validate uploaded content by
-  format, size, and parser behavior; do not trust filenames or client-provided
-  content types.
+- Validate uploaded content by format, size, and parser behavior; do not trust
+  filenames or client-provided content types. Confirmed imports require an
+  unguessable preview token and explicit account confirmation.
 - Keep original imports in temporary storage only and exclude financial data
   and transaction descriptions from logs and diagnostics.
+- HTML is rendered with `html/template`; responses set a same-origin content
+  security policy and disable MIME sniffing. Chart data is JSON-encoded with
+  HTML-sensitive characters escaped before it is embedded. Responses use
+  `Cache-Control: no-store`; state-changing and upload POSTs reject a supplied
+  cross-origin `Origin` or `Referer`.
 - Keep database, temporary uploads, and backups outside version control.
 - Application-managed encryption is not required for the database or backup
   files. Backups may be ordinary files; warn that they contain sensitive
@@ -261,10 +305,10 @@ is held by the Proxmox guest rather than a separate client installation.
   Verify all required workflows in current Chrome on a laptop. Testing other
   browsers and phone layouts is nice to have.
 
-## Deferred until implementation details are available
+## Remaining implementation and deployment work
 
-- Exact database schema and migration files.
+- Category rules, import preview category totals, and categorization workflows.
+- Browser-level verification with the selected Chrome/Playwright setup.
 - Expected transaction counts within the 1 MB-per-file limit.
-- Exact Playwright test commands and CI wiring.
 - Verify the existing network boundary and absence of external routes during
   deployment.

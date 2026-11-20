@@ -1,0 +1,50 @@
+{{define "transactions"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transactions · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a aria-current="page" href="/transactions">Transactions</a>
+      <a href="/imports">Import</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Ledger</p>
+    <h1>{{if .JobID}}Imported transactions{{else}}Transactions{{end}}</h1>
+    {{if .JobID}}<p><a href="/imports/result?job={{.JobID}}">Back to import result</a></p>{{end}}
+    {{if .Transactions}}
+      <section class="card table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Category</th><th>Amount</th><th>EUR</th></tr></thead>
+          <tbody>{{range .Transactions}}
+            <tr>
+              <td>{{.BookingDate}}</td>
+              <td>{{.Bank}}<small>{{.AccountNumber}}</small></td>
+              <td>{{.Description}}{{if .Payee}}<small>{{.Payee}}</small>{{end}}</td>
+              <td>{{.Category}}</td>
+              <td>{{.Amount}} {{.Currency}}</td>
+              <td>{{if .EURAmount}}€{{.EURAmount}}{{else}}—{{end}}</td>
+            </tr>
+          {{end}}</tbody>
+        </table>
+        <p class="muted">Showing up to 100 transactions, newest first.</p>
+      </section>
+    {{else}}
+      <section class="card empty-state">
+        <h2>No transactions yet</h2>
+        <p>Import a bank CSV to start building your ledger.</p>
+        <a class="button" href="/imports">Import transactions</a>
+      </section>
+    {{end}}
+  </main>
+</body>
+</html>
+{{end}}

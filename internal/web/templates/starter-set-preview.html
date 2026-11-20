@@ -1,0 +1,91 @@
+{{define "starter-set-preview"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review starter selection · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a href="/imports">Import</a>
+      <a aria-current="page" href="/settings/starter-set">Categories and rules</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Personalize Finapp</p>
+    <h1>Review starter selection</h1>
+    {{if .FormError}}<div class="notice error" role="alert">{{.FormError}}</div>{{end}}
+    <form method="post" action="/settings/starter-set/apply">
+      {{range .Categories}}<input type="hidden" name="category" value="{{.}}">{{end}}
+      {{range .Rules}}<input type="hidden" name="rule" value="{{.}}">{{end}}
+      <input type="hidden" name="confirm" value="yes">
+    <section class="card">
+      <h2>Categories</h2>
+      {{if .Preview.Categories}}
+        <ul>{{range .Preview.Categories}}<li>{{.Name}} — {{if .Exists}}reuse existing category{{else}}add category{{end}}</li>{{end}}</ul>
+      {{else}}
+        <p>No categories selected.</p>
+      {{end}}
+    </section>
+    <section class="card">
+      <h2>Rules and existing matches</h2>
+      {{if .Preview.Rules}}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Rule</th><th>Category</th><th>Existing matches</th></tr></thead>
+            <tbody>{{range .Preview.Rules}}
+              <tr><td>{{.Name}}</td><td>{{.Category}}</td><td>{{.ExistingCount}}</td></tr>
+            {{end}}</tbody>
+          </table>
+        </div>
+      {{else}}
+        <p>No rules selected. Existing transactions will not be changed.</p>
+      {{end}}
+      {{if .Preview.Transactions}}
+        <h3>Existing transactions matched by the selected rules</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Description</th><th>Direction</th><th>Current category</th><th>Category after applying</th></tr></thead>
+            <tbody>{{range $row := .Preview.Transactions}}
+              <tr>
+                <td>{{$row.BookingDate}}</td>
+                <td>{{$row.Description}}<small>{{$row.Amount}}</small><small>Matched: {{range $i, $rule := $row.RuleNames}}{{if $i}}, {{end}}{{$rule}}{{end}}</small></td>
+                <td>{{$row.Direction}}</td>
+                <td>{{$row.ExistingCategory}}{{if $row.ManualCategory}}<small>Manually assigned</small>{{end}}</td>
+                <td>
+                  {{if or $row.ManualCategory (gt (len $row.Options) 1)}}
+                    <label class="field-label" for="transaction-category-{{$row.ID}}">{{if $row.ManualCategory}}Keep or replace manual category{{else}}Choose between matching rules{{end}}</label>
+                    <select id="transaction-category-{{$row.ID}}" name="transaction_category[{{$row.ID}}]" required>
+                      <option value="">Choose category</option>
+                      {{range $row.Options}}
+                        <option value="{{.}}" {{if eq (index $.Choices $row.ID) .}}selected{{end}}>{{if eq . $row.ExistingCategory}}Keep current: {{end}}{{.}}</option>
+                      {{end}}
+                    </select>
+                  {{else}}
+                    <strong>{{index $row.Options 0}}</strong>
+                  {{end}}
+                </td>
+              </tr>
+            {{end}}</tbody>
+          </table>
+        </div>
+      {{else if .Preview.Rules}}
+        <p class="muted">No existing transactions match these rules.</p>
+      {{end}}
+      <p class="muted">Confirmation adds/reuses selected categories, applies the reviewed choices to matching existing transactions, and enables selected rules for future imports.</p>
+    </section>
+      <div class="form-actions">
+        <a class="button secondary" href="/settings/starter-set">Change selection</a>
+        <button type="submit">Confirm and apply</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}

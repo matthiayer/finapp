@@ -62,9 +62,13 @@ least one listed phrase.
 These are deliberately limited, language-aware suggestions and may not match
 the wording used by a particular bank. The user can opt out of all rules or
 select rules individually. Before applying selected rules, show their existing
-matches and require confirmation. Existing manual categories and conflicting
-rules follow the normal categorization prompts. Only confirmed selected rules
-are enabled for future transactions.
+matches and require confirmation. Require an explicit category choice when
+multiple selected rules match a transaction or when a matching transaction has
+a manual category; offer its current category as the keep option. A single
+matching rule may be applied without another choice to a non-manually
+categorized transaction. Apply these reviewed changes atomically with the
+selected categories and rules. Enable only the selected built-in rules after
+confirmation; preserve unrelated custom rules.
 
 ## File import format
 

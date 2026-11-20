@@ -1,0 +1,35 @@
+{{define "result"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import complete · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a aria-current="page" href="/imports">Import</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Bank data</p>
+    <h1>Import complete</h1>
+    <section class="card">
+      <p>Import job <strong>#{{.JobID}}</strong> · {{.CreatedAt}}</p>
+      <p>{{.ImportedCount}} imported, {{.SkippedCount}} skipped, {{.RowCount}} valid rows reviewed.</p>
+      <h2>Files</h2>
+      <ul>{{range .Files}}<li>{{.}}</li>{{end}}</ul>
+      <div class="form-actions">
+        <a class="button secondary" href="/imports">Import more</a>
+        <a class="button" href="/transactions?job={{.JobID}}">View these transactions</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
+{{end}}

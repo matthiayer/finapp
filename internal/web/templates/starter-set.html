@@ -1,0 +1,62 @@
+{{define "starter-set"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Starter categories and rules · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a href="/imports">Import</a>
+      <a aria-current="page" href="/settings/starter-set">Categories and rules</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Personalize Finapp</p>
+    <h1>Starter categories and rules</h1>
+    <p class="lede">Choose categories and suggested rules independently. Nothing is added or enabled until you review and confirm your selection.</p>
+    {{if .Error}}<div class="notice error" role="alert">{{.Error}}</div>{{end}}
+    {{if .Applied}}<div class="notice" role="status">Your selected categories and rules are saved. Enabled rules will be used in future import previews.</div>{{end}}
+    <form method="post" action="/settings/starter-set/preview">
+      <section class="card">
+        <h2>Categories</h2>
+        <p class="muted">Existing categories are reused; unselected categories are left unchanged.</p>
+        <div class="starter-category-list">
+          {{range .Categories}}
+            <label class="choice-row">
+              <input type="checkbox" name="category" value="{{.Name}}" {{if .Selected}}checked{{end}}>
+              <span>{{.Name}}</span>
+              {{if .Exists}}<span class="badge">Already available</span>{{end}}
+            </label>
+          {{end}}
+        </div>
+      </section>
+      <section class="card">
+        <h2>Suggested rules</h2>
+        <p class="muted">Rules only use direction and transaction-description phrases; matching is case-insensitive.</p>
+        {{range .Rules}}
+          <label class="starter-rule choice-row">
+            <input type="checkbox" name="rule" value="{{.Name}}" {{if .Enabled}}checked{{end}}>
+            <span>
+              <strong>{{.Name}}</strong>
+              <small>Category: {{.Category}} · {{range $i, $condition := .Conditions}}{{if $i}}; {{end}}{{if eq $condition.Field "direction"}}direction is {{$condition.Value}}{{else}}description contains any of {{range $j, $phrase := $condition.Values}}{{if $j}}, {{end}}“{{$phrase}}”{{end}}{{end}}{{end}}</small>
+            </span>
+            {{if .Enabled}}<span class="badge">Enabled</span>{{end}}
+          </label>
+        {{end}}
+      </section>
+      <div class="form-actions">
+        <a class="button secondary" href="/imports">Cancel</a>
+        <button type="submit">Review selection</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}

@@ -409,6 +409,56 @@ previous decision. If a decision is superseded, link the replacement.
   [local development and hosting](../operations/local-development.md);
   [DEC-022](#dec-022-use-a-static-app-address-and-rely-on-the-existing-home-network).
 
+### DEC-024: Use the CGo-free SQLite driver
+
+- **Status:** Accepted
+- **Date:** 2026-11-18
+- **Context:** The Go application needs SQLite while preserving the agreed
+  self-contained Linux AMD64 release.
+- **Decision:** Use `modernc.org/sqlite` as the pure-Go SQLite driver.
+- **Alternatives considered:** Use a CGo-based SQLite driver and require a C
+  toolchain during release builds.
+- **Consequences:** Release builds can set `CGO_ENABLED=0`; validate database
+  migration and runtime behavior through the storage and application tests.
+- **Related documents:** [Technical design](../technical/technical-design.md);
+  [implementation plan](../implementation/implementation-plan.md).
+
+### DEC-025: Keep actual balances independent of category filters
+
+- **Status:** Accepted
+- **Date:** 2026-11-20
+- **Context:** The dashboard requirement said category selection filters every
+  chart, but account-balance history displays real account balances that are
+  not category-specific.
+- **Decision:** Category selection filters transaction-based cash-flow charts.
+  The account-balance chart continues to show actual account balances and
+  remains unchanged; disclose this exception beside the dashboard filters.
+- **Alternatives considered:** Show cumulative net cash flow for the selected
+  category instead of actual account balances, or hide the balance chart while
+  a category filter is active.
+- **Consequences:** The dashboard balance chart remains financially accurate;
+  the dashboard acceptance criteria explicitly exempt it from category
+  filtering.
+- **Related documents:** [Functional design](../product/functional-design.md);
+  [experience design](../product/experience-design.md).
+
+### DEC-026: Defer pending-row detection
+
+- **Status:** Accepted
+- **Date:** 2026-11-20
+- **Context:** The currently supported Triodos, ING, and VDK layouts do not
+  contain an explicit pending-status field, so the import flow cannot reliably
+  distinguish pending rows from posted transactions.
+- **Decision:** Defer pending-row detection/filtering from the first version.
+  The first version supports posted/settled exports only; do not infer pending
+  status from free text.
+- **Alternatives considered:** Wait for a sanitized export with a pending
+  marker before completing the import phase, or guess from transaction text.
+- **Consequences:** Phase 6 can close for the supported layouts. Add pending
+  filtering only when an explicit field and mapping are confirmed.
+- **Related documents:** [Functional design](../product/functional-design.md);
+  [implementation plan](../implementation/implementation-plan.md).
+
 ## Entry template
 
 Copy this section for each decision:

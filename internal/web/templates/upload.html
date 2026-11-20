@@ -1,0 +1,53 @@
+{{define "upload"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import transactions · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a aria-current="page" href="/imports">Import</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Bank data</p>
+    <h1>Import transactions</h1>
+    <p class="lede">Choose CSV exports from Triodos, ING, or VDK Belgium. Each file must be no larger than 1 MB. Files are processed locally and their contents are not retained after the preview expires.</p>
+    <form class="card upload-form" method="post" action="/imports/preview" enctype="multipart/form-data">
+      <label for="files">CSV files</label>
+      <input id="files" name="files" type="file" accept=".csv,text/csv" multiple required>
+      <button type="submit">Review import</button>
+    </form>
+    <p><a href="/settings/starter-set">Choose starter categories and rules</a></p>
+    <section class="card">
+      <h2>Recent imports</h2>
+      {{if .Jobs}}
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Imported</th><th>Files</th><th>Date range</th><th>Result</th><th></th></tr></thead>
+            <tbody>{{range .Jobs}}
+              <tr>
+                <td>{{.CreatedAt}}</td>
+                <td>{{range $i, $file := .Files}}{{if $i}}, {{end}}{{$file}}{{end}}</td>
+                <td>{{if .DateFrom}}{{.DateFrom}} – {{.DateTo}}{{else}}—{{end}}</td>
+                <td>{{.ImportedCount}} imported, {{.SkippedCount}} skipped</td>
+                <td><a href="/transactions?job={{.JobID}}">View transactions</a></td>
+              </tr>
+            {{end}}</tbody>
+          </table>
+        </div>
+      {{else}}
+        <p class="muted">Completed import jobs will appear here.</p>
+      {{end}}
+    </section>
+  </main>
+</body>
+</html>
+{{end}}

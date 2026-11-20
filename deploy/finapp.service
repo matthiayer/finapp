@@ -1,0 +1,24 @@
+[Unit]
+Description=Finapp personal finance web application
+After=network.target
+
+[Service]
+Type=simple
+User=finapp
+Group=finapp
+WorkingDirectory=/var/lib/finapp
+EnvironmentFile=/etc/finapp/finapp.env
+ExecStart=/usr/local/bin/finapp
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+StateDirectory=finapp
+StateDirectoryMode=0700
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/finapp
+
+[Install]
+WantedBy=multi-user.target

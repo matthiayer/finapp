@@ -49,7 +49,9 @@ current destination and primary action visible.
   saving for the selected period.
 - Show the effective date beside each account's latest balance and disclose
   when the combined balance uses dates that differ.
-- Apply the selected category filter to every dashboard chart.
+- Apply the selected category filter to transaction-based cash-flow charts.
+  Keep the account-balance chart as actual account balances regardless of
+  category selection, and disclose this exception beside the filters.
 - Use these four visualizations:
   - Monthly income and spending columns with a saving line.
   - Account balance history, optionally with a combined balance.
@@ -220,7 +222,9 @@ detail → enter known balance and effective date → review recalculated histor
 
 ## Decisions incorporated
 
-- The category filter applies to every dashboard chart.
+- The category filter applies to transaction-based cash-flow charts; actual
+  account-balance history remains unchanged because balances are not
+  category-specific.
 - The six proposed primary navigation destinations are accepted.
 - Recent import jobs remain on the Import landing screen rather than having a
   separate destination.

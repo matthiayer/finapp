@@ -1,0 +1,178 @@
+{{define "preview"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review import · Finapp</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">Finapp</a>
+    <nav aria-label="Main navigation">
+      <a href="/">Overview</a>
+      <a href="/transactions">Transactions</a>
+      <a aria-current="page" href="/imports">Import</a>
+    </nav>
+  </header>
+  <main>
+    <p class="eyebrow">Bank data</p>
+    <h1>Review import</h1>
+    {{if .FormError}}<div class="notice error" role="alert">{{.FormError}}</div>{{end}}
+    {{if .Preview.Errors}}
+      <section class="card" aria-labelledby="errors-title">
+        <h2 id="errors-title">Files need attention</h2>
+        <p>Imports are all-or-nothing. Correct these issues and select the files again.</p>
+        <ul class="error-list">
+          {{range .Preview.Errors}}
+            <li>{{if .FileName}}<strong>{{.FileName}}</strong>{{if .Row}} · row {{.Row}}{{end}}: {{end}}{{.Message}}</li>
+          {{end}}
+        </ul>
+      </section>
+    {{end}}
+    {{if .Preview.Token}}
+      <section class="summary-grid" aria-label="Import summary">
+        <div class="card"><span class="metric">{{.Preview.ValidCount}}</span><span>valid rows</span></div>
+        <div class="card"><span class="metric">{{.Preview.InvalidCount}}</span><span>invalid rows</span></div>
+        <div class="card"><span class="metric">{{.Preview.DateFrom}} – {{.Preview.DateTo}}</span><span>date range</span></div>
+        <div class="card"><span class="metric">{{len .Preview.Files}}</span><span>files</span></div>
+      </section>
+      <section class="card">
+        <p><strong>{{.Preview.DuplicateCount}}</strong> possible duplicates require a choice for each match.</p>
+        {{if .Preview.UnresolvedRules}}
+          <p class="notice error"><strong>{{.Preview.UnresolvedRules}}</strong> transactions match rules with different categories; choose a category for each before importing.</p>
+        {{else}}
+          <p class="muted">Active categorization rules are applied to this preview. Rows without a matching rule remain Uncategorized.</p>
+        {{end}}
+      </section>
+      <section class="card">
+        <h2>Files</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>File</th><th>Bank</th><th>Account</th><th>Rows</th></tr></thead>
+            <tbody>{{range .Preview.Files}}
+              <tr><td>{{.Name}}</td><td>{{.Bank}}</td><td>{{if .AccountName}}{{.AccountName}}<small>{{end}}{{.AccountNumber}}{{if .AccountName}}</small>{{end}}</td><td>{{.RowCount}}</td></tr>
+            {{end}}</tbody>
+          </table>
+        </div>
+      </section>
+      <form method="post" action="/imports/confirm">
+        <input type="hidden" name="token" value="{{.Preview.Token}}">
+        <section class="card">
+          <h2>Confirm accounts</h2>
+          {{range $i, $file := .Preview.Files}}
+            <label class="account-confirm">
+              <input type="checkbox" name="account_confirm[{{$i}}]" value="yes" required {{if index $.Accounts $i}}checked{{end}}>
+              Import {{if $file.AccountName}}{{$file.AccountName}} · {{end}}{{$file.AccountNumber}} from {{$file.Bank}}
+            </label>
+          {{end}}
+        </section>
+        {{if .Preview.RateRequirements}}
+          <section class="card">
+            <h2>Exchange rates</h2>
+            <p>Enter how many euros equal one unit of the source currency for each date.</p>
+            {{range .Preview.RateRequirements}}
+              <label class="field-label" for="rate-{{.Key}}">{{.Currency}} · {{.Date}} <span>1 {{.Currency}} =</span></label>
+              <div class="rate-input"><input id="rate-{{.Key}}" name="rate[{{.Key}}]" type="number" step="any" min="0" value="{{index $.Rates .Key}}" required><span>EUR</span></div>
+            {{end}}
+          </section>
+        {{end}}
+        {{if .Preview.Rows}}
+          <section class="card">
+            <h2>Transactions</h2>
+            <div class="table-wrap">
+              <table class="preview-table">
+                <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category and import choice</th></tr></thead>
+                <tbody>{{range .Preview.Rows}}
+                  {{$row := .}}
+                  <tr>
+                    <td>{{.Transaction.BookingDate.Format "2006-01-02"}}<small>{{.FileName}} · row {{.SourceRow}}</small></td>
+                    <td>{{.Transaction.Description}}{{if .Transaction.CounterpartyName}}<small>{{.Transaction.CounterpartyName}}</small>{{end}}
+                      {{if .Duplicate}}
+                        <span class="badge">Possible duplicate</span>
+                        <small>Existing: {{.Duplicate.Description}} · {{.Duplicate.Amount}} {{.Duplicate.Currency}}{{if .Duplicate.ValueDate}} · value date {{.Duplicate.ValueDate}}{{end}}</small>
+                        {{if .Duplicate.Payee}}<small>Existing payee: {{.Duplicate.Payee}}</small>{{end}}
+                        {{if .Duplicate.ManualEdit}}<small>This transaction has manual edits.</small>{{end}}
+                      {{end}}
+                    </td>
+                    <td>{{.Transaction.Amount}} {{.Transaction.Currency}}</td>
+                    <td>
+                      {{if .Conflict}}
+                        <label class="field-label" for="category-{{.Key}}">Conflicting rule categories</label>
+                        <select id="category-{{.Key}}" name="category[{{.Key}}]" required>
+                          <option value="">Choose category</option>
+                          {{range .RuleMatches}}<option value="{{.ID}}" {{if eq (index $.Categories $row.Key) (printf "%d" .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+                        </select>
+                      {{else}}
+                        <span class="category-assignment">{{.Category}}</span>
+                      {{end}}
+                      {{if eq .Transaction.Direction "unknown"}}
+                        <label class="field-label" for="direction-{{.Key}}">Direction</label>
+                        <select id="direction-{{.Key}}" name="direction[{{.Key}}]" required>
+                          <option value="">Choose direction</option>
+                          <option value="incoming" {{if eq (index $.Directions .Key) "incoming"}}selected{{end}}>Incoming</option>
+                          <option value="outgoing" {{if eq (index $.Directions .Key) "outgoing"}}selected{{end}}>Outgoing</option>
+                        </select>
+                      {{end}}
+                      {{if .Duplicate}}
+                        <label class="field-label" for="action-{{.Key}}">Duplicate handling</label>
+                        <select id="action-{{.Key}}" name="action[{{.Key}}]" required>
+                          <option value="">Choose action</option>
+                          <option value="skip" {{if eq (index $.Actions .Key) "skip"}}selected{{end}}>Skip</option>
+                          <option value="keep-both" {{if eq (index $.Actions .Key) "keep-both"}}selected{{end}}>Keep both</option>
+                          <option value="update" {{if eq (index $.Actions .Key) "update"}}selected{{end}}>Update existing</option>
+                        </select>
+                        {{if .Duplicate.ManualEdit}}
+                          <label class="field-label" for="manual-{{.Key}}">Manual edits</label>
+                          <select id="manual-{{.Key}}" name="manual[{{.Key}}]">
+                            <option value="">Choose when updating</option>
+                            <option value="keep-edits" {{if eq (index $.Manual .Key) "keep-edits"}}selected{{end}}>Keep my edits; skip update</option>
+                            <option value="use-imported" {{if eq (index $.Manual .Key) "use-imported"}}selected{{end}}>Replace with imported values</option>
+                          </select>
+                        {{end}}
+                      {{else}}
+                        <span class="muted">Will be imported</span>
+                      {{end}}
+                    </td>
+                  </tr>
+                {{end}}</tbody>
+              </table>
+            </div>
+          </section>
+        {{end}}
+        <section class="card totals">
+          <h2>EUR totals</h2>
+          <p>Incoming: <strong>€{{.Preview.IncomingTotal}}</strong></p>
+          <p>Outgoing: <strong>€{{.Preview.OutgoingTotal}}</strong></p>
+          {{if .Preview.TotalsPartial}}<p class="muted">Totals exclude transactions that need an exchange rate.</p>{{end}}
+        </section>
+        <section class="card">
+          <h2>Category totals</h2>
+          {{if .Preview.CategoryTotals}}
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Category</th><th>Incoming</th><th>Outgoing</th></tr></thead>
+                <tbody>{{range .Preview.CategoryTotals}}
+                  <tr><td>{{.CategoryName}}</td><td>€{{.Incoming}}</td><td>€{{.Outgoing}}</td></tr>
+                {{end}}</tbody>
+              </table>
+            </div>
+          {{else}}
+            <p class="muted">No categorized totals are available yet.</p>
+          {{end}}
+          {{if .Preview.CategoryPartial}}<p class="muted">Totals are partial while exchange rates or category choices are unresolved.</p>{{end}}
+        </section>
+        <div class="form-actions">
+          <a class="button secondary" href="/imports">Cancel</a>
+          <button type="submit">Confirm and import</button>
+        </div>
+      </form>
+    {{else if not .Preview.Errors}}
+      <div class="notice">No importable transactions were found. Select the files again to start over.</div>
+    {{end}}
+    <p><a href="/imports">Choose different files</a></p>
+  </main>
+</body>
+</html>
+{{end}}

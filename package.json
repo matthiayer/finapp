@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "chart.js": "4.5.0"
+  },
+  "private": true,
+  "scripts": {
+    "test:browser": "node ./tools/e2e/run.mjs"
+  }
+}
