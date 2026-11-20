@@ -35,7 +35,7 @@ jobs:
           tar -czf "dist/finapp-${GITHUB_REF_NAME}-linux-amd64.tar.gz" \
             -C dist/package .
       - name: Verify build output
-      - run: |
+        run: |
           echo "Ref name: $GITHUB_REF_NAME"
           pwd
           ls -la
